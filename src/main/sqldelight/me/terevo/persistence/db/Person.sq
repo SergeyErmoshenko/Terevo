@@ -1,0 +1,114 @@
+CREATE TABLE person (
+    id TEXT NOT NULL PRIMARY KEY,
+    surname TEXT NOT NULL,
+    given_name TEXT NOT NULL,
+    patronymic TEXT NOT NULL,
+    maiden_name TEXT NOT NULL,
+    gender TEXT NOT NULL,
+    birth_kind TEXT NOT NULL,
+    birth_value TEXT,
+    birth_end TEXT,
+    birth_precision TEXT,
+    death_kind TEXT NOT NULL,
+    death_value TEXT,
+    death_end TEXT,
+    death_precision TEXT,
+    birth_place TEXT,
+    birth_latitude REAL,
+    birth_longitude REAL,
+    death_place TEXT,
+    death_latitude REAL,
+    death_longitude REAL,
+    notes TEXT NOT NULL
+);
+
+CREATE INDEX person_name ON person(surname, given_name);
+
+CREATE INDEX person_birth ON person(birth_value);
+
+selectAll:
+SELECT * FROM person;
+
+selectById:
+SELECT * FROM person WHERE id = ?;
+
+insert:
+INSERT INTO person(
+    id,
+    surname,
+    given_name,
+    patronymic,
+    maiden_name,
+    gender,
+    birth_kind,
+    birth_value,
+    birth_end,
+    birth_precision,
+    death_kind,
+    death_value,
+    death_end,
+    death_precision,
+    birth_place,
+    birth_latitude,
+    birth_longitude,
+    death_place,
+    death_latitude,
+    death_longitude,
+    notes
+)
+VALUES (
+    :id,
+    :surname,
+    :given_name,
+    :patronymic,
+    :maiden_name,
+    :gender,
+    :birth_kind,
+    :birth_value,
+    :birth_end,
+    :birth_precision,
+    :death_kind,
+    :death_value,
+    :death_end,
+    :death_precision,
+    :birth_place,
+    :birth_latitude,
+    :birth_longitude,
+    :death_place,
+    :death_latitude,
+    :death_longitude,
+    :notes
+);
+
+update:
+UPDATE person
+SET surname = :surname,
+    given_name = :given_name,
+    patronymic = :patronymic,
+    maiden_name = :maiden_name,
+    gender = :gender,
+    birth_kind = :birth_kind,
+    birth_value = :birth_value,
+    birth_end = :birth_end,
+    birth_precision = :birth_precision,
+    death_kind = :death_kind,
+    death_value = :death_value,
+    death_end = :death_end,
+    death_precision = :death_precision,
+    birth_place = :birth_place,
+    birth_latitude = :birth_latitude,
+    birth_longitude = :birth_longitude,
+    death_place = :death_place,
+    death_latitude = :death_latitude,
+    death_longitude = :death_longitude,
+    notes = :notes
+WHERE id = :id;
+
+delete:
+DELETE FROM person WHERE id = ?;
+
+deleteAll:
+DELETE FROM person;
+
+count:
+SELECT count(*) FROM person;

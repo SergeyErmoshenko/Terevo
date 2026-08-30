@@ -1,0 +1,25 @@
+CREATE TABLE person_custom_field (
+    person_id TEXT NOT NULL,
+    field_key TEXT NOT NULL,
+    field_value TEXT NOT NULL,
+    PRIMARY KEY (person_id, field_key),
+    FOREIGN KEY (person_id) REFERENCES person(id) ON DELETE CASCADE
+);
+
+CREATE INDEX person_custom_field_key ON person_custom_field(field_key);
+
+selectAll:
+SELECT * FROM person_custom_field;
+
+selectByPerson:
+SELECT * FROM person_custom_field WHERE person_id = ?;
+
+insert:
+INSERT INTO person_custom_field(person_id, field_key, field_value)
+VALUES (:person_id, :field_key, :field_value);
+
+deleteByPerson:
+DELETE FROM person_custom_field WHERE person_id = ?;
+
+deleteAll:
+DELETE FROM person_custom_field;

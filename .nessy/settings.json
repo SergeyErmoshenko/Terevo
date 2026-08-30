@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3)",
+      "Bash(import *)",
+      "Bash('/users/s.ermoshenko/ideaprojects/terevo/build/test-results/test/*sqlitenativeprobe*.xml')",
+      "Bash(.read)",
+      "Bash(print)",
+      "Bash(eof)",
+      "Bash(strings *)"
+    ]
+  },
+  "$version": 4
+}

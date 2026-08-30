@@ -66,6 +66,22 @@ class ArchitectureTest {
         )
     }
 
+    @Test
+    fun `domain reports failures as values instead of throwing`() {
+        val violations = productionFilesOf("me.terevo.domain")
+            .flatMap { file ->
+                file.text.lines()
+                    .withIndex()
+                    .filter { (_, line) -> THROW.containsMatchIn(line) || line.contains("!!") }
+                    .map { (index, line) -> "${file.name}:${index + 1}: ${line.trim()}" }
+            }
+
+        assertTrue(
+            violations.isEmpty(),
+            "Domain must return Outcome instead of throwing\n" + violations.joinToString("\n"),
+        )
+    }
+
     private fun assertNoImports(layer: String, forbidden: List<String>) {
         val violations = productionFilesOf(layer).flatMap { file ->
             file.imports
@@ -86,4 +102,8 @@ class ArchitectureTest {
                 val declared = file.packagee?.name.orEmpty()
                 declared == layer || declared.startsWith("$layer.")
             }
+
+    private companion object {
+        val THROW = Regex("""\bthrow\b""")
+    }
 }

@@ -1,0 +1,33 @@
+CREATE TABLE parent_child (
+    id TEXT NOT NULL PRIMARY KEY,
+    parent_id TEXT NOT NULL,
+    child_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    FOREIGN KEY (parent_id) REFERENCES person(id) ON DELETE CASCADE,
+    FOREIGN KEY (child_id) REFERENCES person(id) ON DELETE CASCADE
+);
+
+CREATE INDEX parent_child_parent ON parent_child(parent_id);
+
+CREATE INDEX parent_child_child ON parent_child(child_id);
+
+CREATE UNIQUE INDEX parent_child_link ON parent_child(parent_id, child_id);
+
+selectAll:
+SELECT * FROM parent_child;
+
+selectByChild:
+SELECT * FROM parent_child WHERE child_id = ?;
+
+selectByParent:
+SELECT * FROM parent_child WHERE parent_id = ?;
+
+insert:
+INSERT INTO parent_child(id, parent_id, child_id, kind)
+VALUES (:id, :parent_id, :child_id, :kind);
+
+delete:
+DELETE FROM parent_child WHERE id = ?;
+
+deleteAll:
+DELETE FROM parent_child;

@@ -1,0 +1,25 @@
+CREATE TABLE meta (
+    schema_version INTEGER NOT NULL,
+    app_version TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TRIGGER meta_single_row
+BEFORE INSERT ON meta
+WHEN (SELECT count(*) FROM meta) >= 1
+BEGIN
+    SELECT RAISE(ABORT, 'meta accepts one row');
+END;
+
+select:
+SELECT * FROM meta LIMIT 1;
+
+insert:
+INSERT INTO meta(schema_version, app_version, created_at)
+VALUES (:schema_version, :app_version, :created_at);
+
+update:
+UPDATE meta
+SET schema_version = :schema_version,
+    app_version = :app_version,
+    created_at = :created_at;

@@ -41,6 +41,7 @@ sqldelight {
     databases {
         create("TerevoDatabase") {
             packageName.set("me.terevo.persistence.db")
+            schemaOutputDirectory.set(file("src/main/sqldelight/databases"))
             verifyMigrations.set(true)
         }
     }
@@ -55,10 +56,21 @@ compose.desktop {
             packageVersion = "1.0.0"
             description = "Genealogy tree editor"
             vendor = "Terevo"
+            fileAssociation(
+                mimeType = "application/x-terevo",
+                extension = "terevo",
+                description = "Terevo genealogy project",
+            )
         }
     }
 }
 
+val sqliteNativeDir: File = layout.buildDirectory.dir("tmp/sqlite-native").get().asFile
+
 tasks.test {
     useJUnitPlatform()
+    systemProperty("org.sqlite.tmpdir", sqliteNativeDir.absolutePath)
+    doFirst {
+        sqliteNativeDir.mkdirs()
+    }
 }

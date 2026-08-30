@@ -1,0 +1,64 @@
+CREATE TABLE marriage (
+    id TEXT NOT NULL PRIMARY KEY,
+    spouse_a TEXT NOT NULL,
+    spouse_b TEXT NOT NULL,
+    since_kind TEXT NOT NULL,
+    since_value TEXT,
+    since_end TEXT,
+    since_precision TEXT,
+    until_kind TEXT NOT NULL,
+    until_value TEXT,
+    until_end TEXT,
+    until_precision TEXT,
+    status TEXT NOT NULL,
+    FOREIGN KEY (spouse_a) REFERENCES person(id) ON DELETE CASCADE,
+    FOREIGN KEY (spouse_b) REFERENCES person(id) ON DELETE CASCADE
+);
+
+CREATE INDEX marriage_spouse_a ON marriage(spouse_a);
+
+CREATE INDEX marriage_spouse_b ON marriage(spouse_b);
+
+CREATE UNIQUE INDEX marriage_link ON marriage(spouse_a, spouse_b);
+
+selectAll:
+SELECT * FROM marriage;
+
+selectBySpouse:
+SELECT * FROM marriage WHERE spouse_a = :person OR spouse_b = :person;
+
+insert:
+INSERT INTO marriage(
+    id,
+    spouse_a,
+    spouse_b,
+    since_kind,
+    since_value,
+    since_end,
+    since_precision,
+    until_kind,
+    until_value,
+    until_end,
+    until_precision,
+    status
+)
+VALUES (
+    :id,
+    :spouse_a,
+    :spouse_b,
+    :since_kind,
+    :since_value,
+    :since_end,
+    :since_precision,
+    :until_kind,
+    :until_value,
+    :until_end,
+    :until_precision,
+    :status
+);
+
+delete:
+DELETE FROM marriage WHERE id = ?;
+
+deleteAll:
+DELETE FROM marriage;

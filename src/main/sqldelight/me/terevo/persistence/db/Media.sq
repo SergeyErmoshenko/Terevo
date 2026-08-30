@@ -1,0 +1,60 @@
+CREATE TABLE media (
+    id TEXT NOT NULL PRIMARY KEY,
+    file_name TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL,
+    sha256 TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX media_sha256 ON media(sha256);
+
+CREATE TABLE person_media (
+    person_id TEXT NOT NULL,
+    media_id TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    PRIMARY KEY (person_id, media_id),
+    FOREIGN KEY (person_id) REFERENCES person(id) ON DELETE CASCADE,
+    FOREIGN KEY (media_id) REFERENCES media(id) ON DELETE CASCADE
+);
+
+CREATE INDEX person_media_person ON person_media(person_id);
+
+selectAllMedia:
+SELECT * FROM media;
+
+selectMediaBySha:
+SELECT * FROM media WHERE sha256 = ?;
+
+insertMedia:
+INSERT INTO media(id, file_name, mime_type, size_bytes, sha256)
+VALUES (:id, :file_name, :mime_type, :size_bytes, :sha256);
+
+updateMedia:
+UPDATE media
+SET file_name = :file_name,
+    mime_type = :mime_type,
+    size_bytes = :size_bytes,
+    sha256 = :sha256
+WHERE id = :id;
+
+deleteMedia:
+DELETE FROM media WHERE id = ?;
+
+selectAllAttachments:
+SELECT * FROM person_media ORDER BY person_id, position;
+
+selectAttachmentsByPerson:
+SELECT * FROM person_media WHERE person_id = ? ORDER BY position;
+
+insertAttachment:
+INSERT INTO person_media(person_id, media_id, position)
+VALUES (:person_id, :media_id, :position);
+
+deleteAttachmentsByPerson:
+DELETE FROM person_media WHERE person_id = ?;
+
+countAttachmentsOfMedia:
+SELECT count(*) FROM person_media WHERE media_id = ?;
+
+deleteAllAttachments:
+DELETE FROM person_media;
