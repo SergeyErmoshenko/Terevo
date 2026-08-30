@@ -27,17 +27,17 @@ class ArchitectureTest {
 
     @Test
     fun `layout depends on nothing but stdlib`() {
-        assertNoImports(
-            layer = "me.terevo.layout",
-            forbidden = listOf(
-                "androidx.compose",
-                "app.cash.sqldelight",
-                "me.terevo.ui",
-                "me.terevo.persistence",
-                "me.terevo.domain",
-                "me.terevo.gedcom",
-                "me.terevo.app",
-            ),
+        val violations = productionFilesOf("me.terevo.layout")
+            .flatMap { file ->
+                file.imports
+                    .map { it.name }
+                    .filterNot { imported -> imported.startsWith("kotlin.") || imported.startsWith("java.") }
+                    .map { "${file.name}: $it" }
+            }
+
+        assertTrue(
+            violations.isEmpty(),
+            "Layout may import only stdlib\n" + violations.joinToString("\n"),
         )
     }
 
