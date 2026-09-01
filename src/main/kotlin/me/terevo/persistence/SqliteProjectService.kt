@@ -8,6 +8,7 @@ import java.nio.channels.OverlappingFileLockException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
+import java.security.MessageDigest
 import java.sql.SQLException
 import java.time.Instant
 import java.util.Properties
@@ -95,6 +96,7 @@ class SqliteProjectService(
     private fun acquireLock(file: Path): FileLock? {
         val lockFile = lockFileOf(file)
         return try {
+            Files.createDirectories(lockFile.parent)
             val channel = FileChannel.open(
                 lockFile,
                 StandardOpenOption.CREATE,
@@ -130,7 +132,13 @@ class SqliteProjectService(
             return JdbcSqliteDriver("jdbc:sqlite:${file.toAbsolutePath()}", properties)
         }
 
-        fun lockFileOf(file: Path): Path = file.resolveSibling("${file.fileName}.lock")
+        fun lockFileOf(file: Path): Path {
+            val path = file.toAbsolutePath().normalize().toString()
+            val hash = MessageDigest.getInstance("SHA-256")
+                .digest(path.toByteArray())
+                .joinToString("") { byte -> "%02x".format(byte) }
+            return Path.of(System.getProperty("java.io.tmpdir"), "terevo-locks", "$hash.lock")
+        }
 
         fun releaseLock(lock: FileLock) {
             lock.release()

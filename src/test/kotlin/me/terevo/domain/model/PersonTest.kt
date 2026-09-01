@@ -20,6 +20,26 @@ class PersonTest {
     }
 
     @Test
+    fun `maiden name is rejected for non-female person`() {
+        val error = Person.create(
+            name = name().with(maidenName = "Петрова").shouldBeOk(),
+            gender = Gender.MALE,
+        ).shouldBeErr()
+
+        assertEquals(DomainError.Name.MaidenNameRequiresFemaleGender, error)
+    }
+
+    @Test
+    fun `maiden name is accepted for female person`() {
+        val created = Person.create(
+            name = name().with(maidenName = "Петрова").shouldBeOk(),
+            gender = Gender.FEMALE,
+        ).shouldBeOk()
+
+        assertEquals("Петрова", created.name.maidenName)
+    }
+
+    @Test
     fun `custom field keys are trimmed`() {
         val created = Person.create(name = name(), customFields = mapOf(" Профессия " to "врач")).shouldBeOk()
 

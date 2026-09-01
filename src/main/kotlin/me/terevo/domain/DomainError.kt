@@ -46,9 +46,11 @@ sealed interface DomainError {
 
     sealed interface Name : DomainError {
         data object Blank : Name
+        data object MaidenNameRequiresFemaleGender : Name
     }
 
     sealed interface Date : DomainError {
+        data class InvalidFormat(val value: String) : Date
         data class RangeReversed(val from: LocalDate, val to: LocalDate) : Date
         data class DeathBeforeBirth(val birth: EventDate, val death: EventDate) : Date
     }

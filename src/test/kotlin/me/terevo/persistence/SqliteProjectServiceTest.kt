@@ -37,12 +37,13 @@ class SqliteProjectServiceTest {
     }
 
     @Test
-    fun `created project produces a file and an empty tree`() {
+    fun `created project produces a file and an empty tree without visible lock sibling`() {
         val location = locationOf("family")
 
         val project = track(service.create(location).shouldBeOk())
 
         assertTrue(Files.exists(Path.of(location.path)))
+        assertTrue(Files.notExists(Path.of("${location.path}.lock")))
         assertEquals(0, project.repository.load().shouldBeOk().size)
         assertEquals("family", location.displayName)
     }

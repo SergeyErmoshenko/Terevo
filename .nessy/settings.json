@@ -7,7 +7,12 @@
       "Bash(.read)",
       "Bash(print)",
       "Bash(eof)",
-      "Bash(strings *)"
+      "Bash(strings *)",
+      "Bash(jar *)",
+      "Bash(true)",
+      "mcp__dpWiki__dp_wixie_search",
+      "mcp__dpWiki__dp_wixie_get",
+      "Bash(cp *)"
     ]
   },
   "$version": 4

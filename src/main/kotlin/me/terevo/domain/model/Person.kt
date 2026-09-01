@@ -86,6 +86,9 @@ class Person private constructor(
             customFields: Map<String, String> = emptyMap(),
             mediaIds: List<MediaId> = emptyList(),
         ): Outcome<Person> {
+            if (gender != Gender.FEMALE && name.maidenName.isNotEmpty()) {
+                return Outcome.Err(DomainError.Name.MaidenNameRequiresFemaleGender)
+            }
             val blankKey = customFields.keys.firstOrNull { it.isBlank() }
             if (blankKey != null) return Outcome.Err(DomainError.CustomField.BlankKey)
             val duplicateMedia = mediaIds.groupingBy { it }.eachCount().any { it.value > 1 }

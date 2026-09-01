@@ -51,7 +51,20 @@ class CachedLayoutEngineTest {
         val second = engine.layout(LayoutRequest(withRelation, metrics))
 
         assertNotEquals(first, second)
+        assertEquals(0, second.generations.getValue(nodeId("parent")))
         assertEquals(1, second.generations.getValue(nodeId("child")))
+        assertTrue(second.rectOf(nodeId("parent"))!!.top < second.rectOf(nodeId("child"))!!.top)
+    }
+
+    @Test
+    fun `adding parent after child was cached keeps parent above child`() {
+        val engine = CachedLayoutEngine()
+        engine.layout(LayoutRequest(graphOf(listOf("child")), metrics))
+        val withParent = graphOf(listOf("child", "parent"), listOf(parentage("parent", "child")))
+
+        val layout = engine.layout(LayoutRequest(withParent, metrics))
+
+        assertTrue(layout.rectOf(nodeId("parent"))!!.top < layout.rectOf(nodeId("child"))!!.top)
     }
 
     @Test

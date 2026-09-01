@@ -51,19 +51,17 @@ class CachedLayoutEngine(
 
         val affected = changedNodes(removed + added)
         if (affected.isEmpty()) return resize(cached.layout, request)
-        val generations = cached.layout.generations.toMutableMap()
-        val descendants = descendantsOf(request.graph, affected)
-        val recalculated = recalculateGenerations(request.graph, generations, descendants)
+        val generations = incrementalGenerations(cached.layout.generations, request.graph, added)
+        val generationHeight = request.metrics.defaultSize.height
         val nodes = cached.layout.nodes.mapValues { (id, rect) ->
             val size = request.metrics.sizeOf(id)
-            val generation = recalculated[id] ?: generations.getValue(id)
-            val top = generationTop(generation, size.height, request.options.generationSpacing)
+            val top = generations.getValue(id) * (generationHeight + request.options.generationSpacing)
             Rect(rect.left, top, size.width, size.height)
         }
         return Layout(
             nodes = nodes,
             edges = EdgeRouter.route(request.graph, nodes),
-            generations = generations + recalculated,
+            generations = generations,
             bounds = Rect.enclosing(nodes.values),
         )
     }
@@ -83,41 +81,41 @@ class CachedLayoutEngine(
         }
     }
 
-    private fun descendantsOf(graph: TreeGraph, starts: Set<NodeId>): Set<NodeId> {
-        val affected = starts.toMutableSet()
-        val queue = ArrayDeque(starts)
-        while (queue.isNotEmpty()) {
-            val current = queue.removeFirst()
-            for (child in graph.children(current)) {
-                if (affected.add(child)) queue.addLast(child)
-            }
-        }
-        return affected
-    }
-
-    private fun recalculateGenerations(
-        graph: TreeGraph,
+    private fun incrementalGenerations(
         previous: Map<NodeId, Int>,
-        affected: Set<NodeId>,
+        graph: TreeGraph,
+        added: Set<LayoutEdge>,
     ): Map<NodeId, Int> {
-        val result = mutableMapOf<NodeId, Int>()
-        val remainingParents = affected.associateWith { id -> graph.parents(id).count { it in affected } }.toMutableMap()
-        val queue = ArrayDeque(affected.filter { remainingParents.getValue(it) == 0 }.sortedBy(graph::orderOf))
-        while (queue.isNotEmpty()) {
-            val current = queue.removeFirst()
-            val parentGenerations = graph.parents(current).map { result[it] ?: previous[it] ?: 0 }
-            result[current] = if (parentGenerations.isEmpty()) previous[current] ?: 0 else parentGenerations.max() + 1
-            for (child in graph.children(current)) {
-                if (child !in affected) continue
-                val remaining = remainingParents.getValue(child) - 1
-                remainingParents[child] = remaining
-                if (remaining == 0) queue.addLast(child)
+        val generations = previous.toMutableMap()
+        val queue = ArrayDeque<NodeId>()
+        for (edge in added) {
+            when (edge) {
+                is LayoutEdge.Parentage -> {
+                    val childGeneration = generations.getValue(edge.child)
+                    if (graph.parents(edge.parent).isEmpty() && generations.getValue(edge.parent) >= childGeneration) {
+                        generations[edge.parent] = childGeneration - 1
+                    }
+                    queue.addLast(edge.child)
+                }
+                is LayoutEdge.Union -> {
+                    val generation = minOf(generations.getValue(edge.first), generations.getValue(edge.second))
+                    generations[edge.first] = generation
+                    generations[edge.second] = generation
+                }
             }
         }
-        return result
+        val visited = mutableSetOf<NodeId>()
+        while (queue.isNotEmpty()) {
+            val current = queue.removeFirst()
+            val parentGeneration = graph.parents(current).maxOfOrNull(generations::getValue) ?: generations.getValue(current)
+            val next = if (graph.parents(current).isEmpty()) generations.getValue(current) else parentGeneration + 1
+            if (generations[current] != next) generations[current] = next
+            if (visited.add(current)) graph.children(current).forEach(queue::addLast)
+        }
+        val minimum = generations.values.minOrNull() ?: 0
+        if (minimum < 0) generations.replaceAll { _, generation -> generation - minimum }
+        return generations
     }
-
-    private fun generationTop(generation: Int, height: Double, spacing: Double): Double = generation * (height + spacing)
 
     private data class CacheEntry(
         val graph: TreeGraph,

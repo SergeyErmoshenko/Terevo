@@ -26,6 +26,10 @@ class CommandBus(
 
     val undoDepth: Int get() = undoStack.size
 
+    val nextUndo: Command? get() = undoStack.lastOrNull()
+
+    val nextRedo: Command? get() = redoStack.lastOrNull()
+
     fun execute(command: Command): Outcome<List<ValidationWarning>> {
         val result = when (val applied = command.applyTo(mutableTree.value)) {
             is Outcome.Ok -> applied.value
