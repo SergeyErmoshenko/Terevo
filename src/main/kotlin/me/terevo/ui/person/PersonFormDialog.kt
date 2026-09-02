@@ -10,6 +10,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -28,6 +29,8 @@ fun PersonFormDialog(
     onChange: (PersonFormState) -> Unit,
     onSave: () -> Unit,
     onCancel: () -> Unit,
+    onConfirmDiscard: () -> Unit,
+    onKeepEditing: () -> Unit,
 ) {
     val spacing = TerevoTheme.spacing
     AlertDialog(
@@ -104,7 +107,52 @@ fun PersonFormDialog(
                 PersonField(Strings.NOTES, state.notes) {
                     onChange(validatePersonForm(state.copy(notes = it)))
                 }
+                Text(Strings.CUSTOM_FIELDS)
+                state.customFields.forEachIndexed { index, field ->
+                    PersonField(Strings.CUSTOM_FIELD_KEY, field.key) { key ->
+                        onChange(
+                            validatePersonForm(
+                                state.copy(customFields = state.customFields.updated(index, field.copy(key = key))),
+                            ),
+                        )
+                    }
+                    state.customFieldSuggestions.filter { field.key.isBlank() || it.startsWith(field.key, ignoreCase = true) }
+                        .take(CUSTOM_FIELD_SUGGESTION_LIMIT)
+                        .forEach { suggestion ->
+                            OutlinedButton(
+                                onClick = {
+                                    onChange(
+                                        validatePersonForm(
+                                            state.copy(customFields = state.customFields.updated(index, field.copy(key = suggestion))),
+                                        ),
+                                    )
+                                },
+                            ) { Text(suggestion) }
+                        }
+                    PersonField(Strings.CUSTOM_FIELD_VALUE, field.value) { value ->
+                        onChange(
+                            validatePersonForm(
+                                state.copy(customFields = state.customFields.updated(index, field.copy(value = value))),
+                            ),
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            onChange(
+                                validatePersonForm(
+                                    state.copy(customFields = state.customFields.filterIndexed { row, _ -> row != index }),
+                                ),
+                            )
+                        },
+                    ) { Text(Strings.REMOVE_CUSTOM_FIELD) }
+                }
+                OutlinedButton(
+                    onClick = { onChange(state.copy(customFields = state.customFields + CustomFieldInput())) },
+                ) { Text(Strings.ADD_CUSTOM_FIELD) }
                 if (!state.hasDateInputError()) state.blockingError?.let { Text(it) }
+                state.warnings.forEach { warning ->
+                    Text(warning, color = MaterialTheme.colorScheme.tertiary)
+                }
             }
         },
         confirmButton = {
@@ -114,6 +162,19 @@ fun PersonFormDialog(
             OutlinedButton(onClick = onCancel) { Text(Strings.CANCEL) }
         },
     )
+    if (state.isDiscardConfirmationVisible) {
+        AlertDialog(
+            onDismissRequest = onKeepEditing,
+            title = { Text(Strings.DISCARD_CHANGES) },
+            text = { Text(Strings.DISCARD_CHANGES_MESSAGE) },
+            confirmButton = {
+                Button(onClick = onConfirmDiscard) { Text(Strings.DISCARD) }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = onKeepEditing) { Text(Strings.KEEP_EDITING) }
+            },
+        )
+    }
 }
 
 @Composable
@@ -194,6 +255,9 @@ private val Gender.label: String
         Gender.UNKNOWN -> Strings.GENDER_UNKNOWN
     }
 
+private fun <T> List<T>.updated(index: Int, value: T): List<T> =
+    mapIndexed { current, item -> if (current == index) value else item }
+
 private val EventDateMode.label: String
     get() = when (this) {
         EventDateMode.EXACT -> Strings.DATE_EXACT
@@ -201,3 +265,5 @@ private val EventDateMode.label: String
         EventDateMode.RANGE -> Strings.DATE_RANGE
         EventDateMode.UNKNOWN -> Strings.DATE_UNKNOWN
     }
+
+private const val CUSTOM_FIELD_SUGGESTION_LIMIT: Int = 5

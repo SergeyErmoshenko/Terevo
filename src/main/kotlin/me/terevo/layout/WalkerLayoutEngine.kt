@@ -182,6 +182,7 @@ class WalkerLayoutEngine : LayoutEngine {
         group.nodes.sumOf { metrics.sizeOf(it).width } + spacing * (group.nodes.size - 1)
 
     private fun visibleNodes(request: LayoutRequest, generations: Map<NodeId, Int>): Set<NodeId> {
+        if (request.options.mode == LayoutMode.WHOLE_FAMILY) return request.graph.sortedNodeIds().toSet()
         val root = request.options.root ?: return request.graph.sortedNodeIds().toSet()
         if (!request.graph.contains(root)) return emptySet()
         val depth = request.options.depth
@@ -193,7 +194,7 @@ class WalkerLayoutEngine : LayoutEngine {
             val next = when (request.options.mode) {
                 LayoutMode.ANCESTORS -> request.graph.parents(current)
                 LayoutMode.DESCENDANTS -> request.graph.children(current)
-                LayoutMode.BOTH -> request.graph.parents(current) + request.graph.children(current)
+                LayoutMode.BOTH -> request.graph.parents(current) + request.graph.children(current) + request.graph.partners(current)
                 LayoutMode.WHOLE_FAMILY -> request.graph.parents(current) + request.graph.children(current) + request.graph.partners(current)
             }
             for (id in next) {

@@ -12,6 +12,7 @@ import me.terevo.domain.model.Person
 import me.terevo.domain.model.PersonId
 import me.terevo.domain.model.PersonName
 import me.terevo.domain.model.Place
+import me.terevo.domain.invariant.ValidationWarning
 
 enum class EventDateMode {
     EXACT,
@@ -27,6 +28,11 @@ data class EventDateInput(
     val precision: DatePrecision = DatePrecision.YEAR,
 )
 
+data class CustomFieldInput(
+    val key: String = "",
+    val value: String = "",
+)
+
 data class PersonFormState(
     val id: PersonId = PersonId.next(),
     val surname: String = "",
@@ -40,6 +46,8 @@ data class PersonFormState(
     val birthPlace: String = "",
     val deathPlace: String = "",
     val notes: String = "",
+    val customFields: List<CustomFieldInput> = emptyList(),
+    val customFieldSuggestions: List<String> = emptyList(),
     val original: Person? = null,
     val blockingError: String? = null,
     val warnings: List<String> = emptyList(),
@@ -47,14 +55,16 @@ data class PersonFormState(
 ) {
     val isDirty: Boolean get() = original?.let { toComparable() != fromPerson(it).toComparable() } ?: hasInput
     val canSave: Boolean get() = blockingError == null && (surname.isNotBlank() || givenName.isNotBlank())
-    private val hasInput: Boolean get() = surname.isNotBlank() || givenName.isNotBlank() || notes.isNotBlank()
+    private val hasInput: Boolean get() =
+        surname.isNotBlank() || givenName.isNotBlank() || notes.isNotBlank() || customFields.isNotEmpty()
 
     private fun toComparable(): List<Any> = listOf(
         surname, givenName, patronymic, maidenName, gender, birth, isAlive, death, birthPlace, deathPlace, notes,
+        customFields,
     )
 
     companion object {
-        fun fromPerson(person: Person): PersonFormState = PersonFormState(
+        fun fromPerson(person: Person, customFieldSuggestions: List<String> = emptyList()): PersonFormState = PersonFormState(
             id = person.id,
             surname = person.name.surname,
             givenName = person.name.givenName,
@@ -67,33 +77,44 @@ data class PersonFormState(
             birthPlace = person.birthPlace?.title.orEmpty(),
             deathPlace = person.deathPlace?.title.orEmpty(),
             notes = person.notes,
+            customFields = person.customFields.entries.sortedBy { it.key }.map { CustomFieldInput(it.key, it.value) },
+            customFieldSuggestions = customFieldSuggestions,
             original = person,
         )
     }
 }
 
-fun PersonFormState.toPerson(): Outcome<Person> = PersonName.of(
-    surname,
-    givenName,
-    patronymic,
-    maidenName.takeIf { gender == Gender.FEMALE }.orEmpty(),
-).flatMap { name ->
-    birth.toEventDate().flatMap { birthDate ->
-        val deathDate = if (isAlive) Outcome.Ok(EventDate.Unknown) else death.toEventDate()
-        deathDate.flatMap { diedOn ->
-            LifeSpan.of(birthDate, diedOn).flatMap { lifeSpan ->
-                placeOf(birthPlace).flatMap { bornAt ->
-                    val diedAtResult = if (isAlive) Outcome.Ok(null) else placeOf(deathPlace)
-                    diedAtResult.flatMap { diedAt ->
-                        Person.create(
-                            id = id,
-                            name = name,
-                            gender = gender,
-                            lifeSpan = lifeSpan,
-                            birthPlace = bornAt,
-                            deathPlace = diedAt,
-                            notes = notes,
-                        )
+fun PersonFormState.toPerson(): Outcome<Person> {
+    val fields = customFields.filter { it.key.isNotBlank() || it.value.isNotBlank() }
+        .map { it.copy(key = it.key.trim(), value = it.value.trim()) }
+    if (fields.any { it.key.isBlank() } || fields.map { it.key.lowercase() }.distinct().size != fields.size) {
+        return Outcome.Err(DomainError.CustomField.BlankKey)
+    }
+    return PersonName.of(
+        surname,
+        givenName,
+        patronymic,
+        maidenName.takeIf { gender == Gender.FEMALE }.orEmpty(),
+    ).flatMap { name ->
+        birth.toEventDate().flatMap { birthDate ->
+            val deathDate = if (isAlive) Outcome.Ok(EventDate.Unknown) else death.toEventDate()
+            deathDate.flatMap { diedOn ->
+                LifeSpan.of(birthDate, diedOn).flatMap { lifeSpan ->
+                    placeOf(birthPlace).flatMap { bornAt ->
+                        val diedAtResult = if (isAlive) Outcome.Ok(null) else placeOf(deathPlace)
+                        diedAtResult.flatMap { diedAt ->
+                            Person.create(
+                                id = id,
+                                name = name,
+                                gender = gender,
+                                lifeSpan = lifeSpan,
+                                birthPlace = bornAt,
+                                deathPlace = diedAt,
+                                notes = notes,
+                                customFields = fields.associate { it.key to it.value },
+                                mediaIds = original?.mediaIds.orEmpty(),
+                            )
+                        }
                     }
                 }
             }
@@ -113,6 +134,7 @@ fun DomainError.toRussianMessage(): String = when (this) {
     is DomainError.Date.RangeReversed -> "Начало диапазона даты должно быть раньше окончания"
     is DomainError.Date.DeathBeforeBirth -> "Дата смерти не может быть раньше даты рождения"
     DomainError.Place.Blank -> "Название места не может быть пустым"
+    DomainError.CustomField.BlankKey -> "Укажите уникальное название дополнительного поля"
     else -> "Не удалось сохранить изменения"
 }
 
@@ -140,6 +162,12 @@ private fun EventDate.toInput(): EventDateInput = when (this) {
     is EventDate.Approximate -> EventDateInput(EventDateMode.APPROXIMATE, around.toDisplayDate(), precision = precision)
     is EventDate.Range -> EventDateInput(EventDateMode.RANGE, from.toDisplayDate(), to.toDisplayDate())
     EventDate.Unknown -> EventDateInput()
+}
+
+fun ValidationWarning.toRussianMessage(): String = when (this) {
+    is ValidationWarning.ParentBornAfterChild -> "Родитель родился позже ребёнка"
+    is ValidationWarning.ParentTooYoung -> "Возраст родителя на момент рождения ребёнка — $years лет"
+    is ValidationWarning.ChildBornAfterParentDeath -> "Ребёнок родился через $years лет после смерти родителя"
 }
 
 private inline fun <T> Outcome<LocalDate>.mapDate(transform: (LocalDate) -> T): Outcome<T> = when (this) {

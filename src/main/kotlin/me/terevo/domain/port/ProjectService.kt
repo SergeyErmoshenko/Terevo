@@ -14,6 +14,10 @@ value class ProjectLocation(val path: String) {
 
     companion object {
         const val EXTENSION: String = "terevo"
+        const val DEFAULT_FILE_NAME: String = "project.$EXTENSION"
+        const val BACKUP_DIRECTORY: String = "backups"
+        const val MEDIA_DIRECTORY: String = "media"
+        const val THUMBNAIL_DIRECTORY: String = "thumbnails"
     }
 }
 
@@ -21,6 +25,7 @@ interface OpenProject {
     val location: ProjectLocation
     val schemaVersion: Long
     val repository: TreeRepository
+    val mediaRepository: MediaRepository get() = MediaRepository.NONE
 
     fun saveAs(target: ProjectLocation): Outcome<OpenProject>
 

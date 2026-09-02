@@ -101,6 +101,46 @@ class PersonFormTest {
     }
 
     @Test
+    fun `custom fields map to domain and survive edit form round trip`() {
+        val state = PersonFormState(
+            surname = "Иванов",
+            customFields = listOf(CustomFieldInput("Профессия", "врач"), CustomFieldInput()),
+        )
+
+        val person = (state.toPerson() as Outcome.Ok).value
+        val restored = PersonFormState.fromPerson(person, listOf("Профессия", "Награды"))
+
+        assertEquals(mapOf("Профессия" to "врач"), person.customFields)
+        assertEquals(listOf(CustomFieldInput("Профессия", "врач")), restored.customFields)
+        assertEquals(listOf("Профессия", "Награды"), restored.customFieldSuggestions)
+    }
+
+    @Test
+    fun `custom field keys and values are normalized`() {
+        val state = PersonFormState(
+            surname = "Иванов",
+            customFields = listOf(CustomFieldInput("  Профессия  ", "  врач  ")),
+        )
+
+        val person = (state.toPerson() as Outcome.Ok).value
+
+        assertEquals(mapOf("Профессия" to "врач"), person.customFields)
+    }
+
+    @Test
+    fun `duplicate custom field keys block saving`() {
+        val state = validatePersonForm(
+            PersonFormState(
+                surname = "Иванов",
+                customFields = listOf(CustomFieldInput("Профессия", "врач"), CustomFieldInput("Профессия", "учитель")),
+            ),
+        )
+
+        assertFalse(state.canSave)
+        assertEquals("Укажите уникальное название дополнительного поля", state.blockingError)
+    }
+
+    @Test
     fun `live validation blocks blank name`() {
         val state = validatePersonForm(PersonFormState())
 

@@ -33,10 +33,11 @@ enum class NodeAccent {
 data class TreeHighlight(
     val selected: NodeId? = null,
     val roles: Map<NodeId, String> = emptyMap(),
+    val searchResults: Set<NodeId> = emptySet(),
 ) {
-    val isActive: Boolean get() = selected != null
+    val isActive: Boolean get() = selected != null || searchResults.isNotEmpty()
 
-    fun isRelated(id: NodeId): Boolean = id == selected || id in roles
+    fun isRelated(id: NodeId): Boolean = id == selected || id in roles || id in searchResults
 
     fun roleOf(id: NodeId): String? = when {
         !isActive -> null
@@ -47,7 +48,7 @@ data class TreeHighlight(
     fun accentOf(id: NodeId): NodeAccent = when {
         !isActive -> NodeAccent.NEUTRAL
         id == selected -> NodeAccent.FOCUSED
-        id in roles -> NodeAccent.RELATED
+        id in roles || id in searchResults -> NodeAccent.RELATED
         else -> NodeAccent.MUTED
     }
 

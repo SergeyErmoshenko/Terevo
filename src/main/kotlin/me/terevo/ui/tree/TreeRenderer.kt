@@ -25,18 +25,23 @@ fun DrawScope.drawTree(
     textMeasurer: TextMeasurer,
     highlight: TreeHighlight,
 ) {
-    layout.edges.forEach { drawEdge(it, camera, colors) }
+    layout.edges.forEach { drawEdge(it, camera, colors, highlight.accentOf(it.edge)) }
     layout.nodes.forEach { (id, rect) ->
         val visual = visuals.persons[id] ?: return@forEach
         drawPerson(rect, visual, camera, colors, textMeasurer, highlight.accentOf(id), highlight.roleOf(id))
     }
 }
 
-private fun DrawScope.drawEdge(path: EdgePath, camera: Camera, colors: TerevoColors) {
-    val color = when (path.style) {
+private fun DrawScope.drawEdge(path: EdgePath, camera: Camera, colors: TerevoColors, accent: NodeAccent) {
+    val baseColor = when (path.style) {
         EdgeStyle.BIOLOGICAL, EdgeStyle.MARRIAGE -> colors.unknownGender
         EdgeStyle.NON_BIOLOGICAL -> colors.selection
         EdgeStyle.DISSOLVED_MARRIAGE -> colors.female
+    }
+    val color = when (accent) {
+        NodeAccent.FOCUSED, NodeAccent.RELATED -> colors.selection
+        NodeAccent.MUTED -> baseColor.copy(alpha = MUTED_ALPHA)
+        NodeAccent.NEUTRAL -> baseColor
     }
     val effect = if (path.style == EdgeStyle.NON_BIOLOGICAL) PathEffect.dashPathEffect(floatArrayOf(8f, 6f)) else null
     path.segments.zipWithNext().forEach { (start, end) ->

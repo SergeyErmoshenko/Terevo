@@ -140,6 +140,22 @@ class SqliteProjectServiceTest {
     }
 
     @Test
+    fun `save as bundled project copies media content`() {
+        val source = ProjectLocation(workspace.resolve("family").resolve(ProjectLocation.DEFAULT_FILE_NAME).toString())
+        val target = ProjectLocation(workspace.resolve("family-copy").resolve(ProjectLocation.DEFAULT_FILE_NAME).toString())
+        val project = service.create(source).shouldBeOk()
+        val mediaSource = workspace.resolve("photo.txt")
+        Files.writeString(mediaSource, "photo")
+        val media = project.mediaRepository.import(mediaSource.toString()).shouldBeOk()
+        val originalContent = Path.of(project.mediaRepository.contentPath(media.id).shouldBeOk())
+
+        val copy = track(project.saveAs(target).shouldBeOk())
+        val copiedContent = Path.of(copy.mediaRepository.contentPath(media.id).shouldBeOk())
+
+        assertEquals(Files.readString(originalContent), Files.readString(copiedContent))
+    }
+
+    @Test
     fun `save as over an existing file is rejected`() {
         val source = locationOf("family")
         val target = locationOf("family-copy")

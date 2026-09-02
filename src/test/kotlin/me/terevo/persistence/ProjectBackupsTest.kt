@@ -55,6 +55,20 @@ class ProjectBackupsTest {
     }
 
     @Test
+    fun `bundled project creates media directories and stores backups inside bundle`() {
+        val directory = workspace.resolve("family")
+        val location = ProjectLocation(directory.resolve(ProjectLocation.DEFAULT_FILE_NAME).toString())
+
+        service.create(location).shouldBeOk().close().shouldBeOk()
+        service.open(location).shouldBeOk().close().shouldBeOk()
+
+        assertTrue(Files.isDirectory(directory.resolve(ProjectLocation.MEDIA_DIRECTORY)))
+        assertTrue(Files.isDirectory(directory.resolve(ProjectLocation.THUMBNAIL_DIRECTORY)))
+        assertEquals(directory.resolve(ProjectLocation.BACKUP_DIRECTORY), ProjectBackups.directoryOf(Path.of(location.path)))
+        assertEquals(1, ProjectBackups().list(Path.of(location.path)).size)
+    }
+
+    @Test
     fun `rotation keeps only the newest five backups`() {
         val location = locationOf("family")
         service.create(location).shouldBeOk().close().shouldBeOk()

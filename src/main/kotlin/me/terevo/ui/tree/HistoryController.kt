@@ -56,7 +56,7 @@ private fun Command.russianDescription(): String = when (this) {
     is RemovePerson -> "удаление человека"
     is AddRelation -> "восстановление связи"
     is RemoveRelation -> "удаление связи"
-    is Batch -> "групповое изменение"
+    is Batch -> commands.singleOrNull()?.russianDescription() ?: "групповое изменение"
 }
 
 private fun Command.affectedPerson(commandBus: CommandBus): PersonId? = when (this) {

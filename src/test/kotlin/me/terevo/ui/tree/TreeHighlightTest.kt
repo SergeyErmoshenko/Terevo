@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import me.terevo.layout.LayoutEdge
 import me.terevo.layout.NodeId
 import me.terevo.ui.Strings
 
@@ -39,6 +40,16 @@ class TreeHighlightTest {
         assertEquals("Мама", highlight.roleOf(parent))
         assertEquals("Сын", highlight.roleOf(child))
         assertEquals("Жена", highlight.roleOf(spouse))
+    }
+
+    @Test
+    fun `selected relations are highlighted and unrelated edges are muted`() {
+        val highlight = TreeHighlight(selected, mapOf(parent to "Мама"))
+        val selectedEdge = LayoutEdge.Parentage(parent, selected)
+        val unrelatedEdge = LayoutEdge.Parentage(unrelated, child)
+
+        assertEquals(NodeAccent.RELATED, highlight.accentOf(selectedEdge))
+        assertEquals(NodeAccent.MUTED, highlight.accentOf(unrelatedEdge))
     }
 
     @Test

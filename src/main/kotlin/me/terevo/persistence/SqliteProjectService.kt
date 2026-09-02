@@ -5,15 +5,19 @@ import java.io.IOException
 import java.nio.channels.FileChannel
 import java.nio.channels.FileLock
 import java.nio.channels.OverlappingFileLockException
+import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 import java.security.MessageDigest
 import java.sql.SQLException
 import java.time.Instant
 import java.util.Properties
+import java.util.UUID
 import me.terevo.domain.DomainError
 import me.terevo.domain.Outcome
+import me.terevo.domain.port.MediaRepository
 import me.terevo.domain.port.OpenProject
 import me.terevo.domain.port.ProjectLocation
 import me.terevo.domain.port.ProjectService
@@ -31,6 +35,11 @@ class SqliteProjectService(
         if (Files.exists(file)) return Outcome.Err(DomainError.Project.AlreadyExists(location.path))
         return guarded(location) {
             file.parent?.let { Files.createDirectories(it) }
+            if (file.fileName.toString() == ProjectLocation.DEFAULT_FILE_NAME) {
+                Files.createDirectories(file.parent.resolve(ProjectLocation.BACKUP_DIRECTORY))
+                Files.createDirectories(file.parent.resolve(ProjectLocation.MEDIA_DIRECTORY))
+                Files.createDirectories(file.parent.resolve(ProjectLocation.THUMBNAIL_DIRECTORY))
+            }
             val lock = acquireLock(file) ?: return@guarded Outcome.Err(DomainError.Project.Locked(location.path))
             val driver = openDriver(file)
             TerevoDatabase.Schema.create(driver)
@@ -157,19 +166,38 @@ private class SqliteOpenProject(
 ) : OpenProject {
 
     override val repository: TreeRepository = SqlDelightTreeRepository(database)
+    override val mediaRepository: MediaRepository = ProjectMediaRepository(database, Path.of(location.path))
 
     override fun saveAs(target: ProjectLocation): Outcome<OpenProject> {
         val targetFile = Path.of(target.path)
-        if (Files.exists(targetFile)) return Outcome.Err(DomainError.Project.AlreadyExists(target.path))
+        val bundled = targetFile.fileName.toString() == ProjectLocation.DEFAULT_FILE_NAME
+        if (Files.exists(targetFile) || bundled && Files.exists(targetFile.parent)) {
+            return Outcome.Err(DomainError.Project.AlreadyExists(target.path))
+        }
+        val token = UUID.randomUUID().toString()
+        val temporaryRoot = if (bundled) {
+            targetFile.parent.resolveSibling(".${targetFile.parent.fileName}-$token.tmp")
+        } else {
+            targetFile.parent
+        }
+        val temporaryFile = if (bundled) {
+            temporaryRoot.resolve(ProjectLocation.DEFAULT_FILE_NAME)
+        } else {
+            targetFile.resolveSibling(".${targetFile.fileName}-$token.tmp")
+        }
         return try {
-            targetFile.parent?.let { Files.createDirectories(it) }
-            val escaped = targetFile.toAbsolutePath().toString().replace("'", "''")
+            temporaryFile.parent?.let { Files.createDirectories(it) }
+            val escaped = temporaryFile.toAbsolutePath().toString().replace("'", "''")
             driver.execute(null, "VACUUM INTO '$escaped'", 0)
+            copyMedia(temporaryFile)
+            if (bundled) temporaryRoot.moveTo(targetFile.parent) else temporaryFile.moveTo(targetFile)
             close()
             service.open(target)
         } catch (failure: SQLException) {
+            cleanupTemporary(bundled, temporaryRoot, temporaryFile)
             Outcome.Err(DomainError.Storage.Failure(failure.message.orEmpty()))
         } catch (failure: IOException) {
+            cleanupTemporary(bundled, temporaryRoot, temporaryFile)
             Outcome.Err(DomainError.Storage.Failure(failure.message.orEmpty()))
         }
     }
@@ -184,5 +212,39 @@ private class SqliteOpenProject(
         Outcome.Err(DomainError.Storage.Failure(failure.message.orEmpty()))
     } catch (failure: IOException) {
         Outcome.Err(DomainError.Storage.Failure(failure.message.orEmpty()))
+    }
+
+    private fun copyMedia(targetFile: Path) {
+        if (targetFile.fileName.toString() != ProjectLocation.DEFAULT_FILE_NAME) return
+        val targetDirectory = targetFile.parent
+        Files.createDirectories(targetDirectory.resolve(ProjectLocation.BACKUP_DIRECTORY))
+        Files.createDirectories(targetDirectory.resolve(ProjectLocation.THUMBNAIL_DIRECTORY))
+        val source = Path.of(location.path).parent.resolve(ProjectLocation.MEDIA_DIRECTORY)
+        val target = targetDirectory.resolve(ProjectLocation.MEDIA_DIRECTORY)
+        Files.createDirectories(target)
+        if (!Files.exists(source)) return
+        Files.walk(source).use { paths ->
+            paths.forEach { path ->
+                val destination = target.resolve(source.relativize(path))
+                if (Files.isDirectory(path)) Files.createDirectories(destination)
+                else Files.copy(path, destination)
+            }
+        }
+    }
+}
+
+private fun Path.moveTo(target: Path) {
+    try {
+        Files.move(this, target, StandardCopyOption.ATOMIC_MOVE)
+    } catch (_: AtomicMoveNotSupportedException) {
+        Files.move(this, target)
+    }
+}
+
+private fun cleanupTemporary(bundled: Boolean, root: Path, file: Path) {
+    if (bundled && Files.exists(root)) {
+        Files.walk(root).use { paths -> paths.sorted(Comparator.reverseOrder()).forEach(Files::deleteIfExists) }
+    } else {
+        Files.deleteIfExists(file)
     }
 }

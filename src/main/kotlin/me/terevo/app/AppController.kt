@@ -1,25 +1,47 @@
 package me.terevo.app
 
+import java.nio.file.Files
+import java.nio.file.Path
+import javax.imageio.ImageIO
 import me.terevo.domain.DomainError
 import me.terevo.domain.Outcome
 import me.terevo.domain.command.CommandBus
+import me.terevo.domain.command.UpdatePerson
 import me.terevo.domain.model.FamilyTree
 import me.terevo.domain.model.Marriage
+import me.terevo.domain.model.MediaId
 import me.terevo.domain.model.ParentChild
 import me.terevo.domain.model.PersonId
 import me.terevo.domain.port.OpenProject
 import me.terevo.domain.port.ProjectLocation
 import me.terevo.domain.port.ProjectService
+import me.terevo.export.PdfFiles
+import me.terevo.gedcom.GedcomFiles
+import me.terevo.kinship.KinshipCalculator
+import me.terevo.kinship.KinshipResult
+import me.terevo.layout.LayoutMode
+import me.terevo.layout.LayoutOptions
+import me.terevo.statistics.TreeStatistics
 import me.terevo.ui.AppState
+import me.terevo.ui.GedcomImportState
+import me.terevo.ui.MediaViewerState
+import me.terevo.ui.export.exportTreePng
+import me.terevo.ui.kinship.KinshipDialogState
 import me.terevo.ui.person.KinshipRoles
 import me.terevo.ui.person.PersonFormService
 import me.terevo.ui.person.PersonFormState
+import me.terevo.ui.person.PersonSearch
+import me.terevo.ui.person.PersonSearchFilter
+import me.terevo.ui.person.RelatedPerson
 import me.terevo.ui.person.RelationDialogState
 import me.terevo.ui.person.RelationEditor
 import me.terevo.ui.person.RelationMode
 import me.terevo.ui.person.RelationResult
 import me.terevo.ui.person.toPerson
+import me.terevo.ui.person.toRussianMessage as warningToRussianMessage
 import me.terevo.ui.person.validatePersonForm
+import me.terevo.ui.theme.LightColors
+import me.terevo.ui.tree.HistoryController
 import me.terevo.ui.tree.TreeCanvasIntent
 import me.terevo.ui.tree.TreeCanvasMapper
 import me.terevo.ui.tree.TreeCanvasState
@@ -42,14 +64,19 @@ class AppController(
     fun open(location: ProjectLocation): AppState = activate(projects.open(location))
 
     fun startAddingPerson(): AppState {
-        if (commandBus == null) return state
-        state = state.copy(personForm = validatePersonForm(PersonFormState()))
+        val tree = commandBus?.tree?.value ?: return state
+        state = state.copy(
+            personForm = validatePersonForm(PersonFormState(customFieldSuggestions = customFieldSuggestions(tree))),
+        )
         return state
     }
 
     fun startEditingPerson(): AppState {
         val person = state.selectedPerson ?: return state
-        state = state.copy(personForm = validatePersonForm(PersonFormState.fromPerson(person)))
+        val tree = commandBus?.tree?.value ?: return state
+        state = state.copy(
+            personForm = validatePersonForm(PersonFormState.fromPerson(person, customFieldSuggestions(tree))),
+        )
         return state
     }
 
@@ -60,16 +87,178 @@ class AppController(
 
     fun deleteSelectedPerson(): AppState {
         val person = state.selectedPerson ?: return state
+        val opened = project ?: return state
         val bus = commandBus ?: return state
         state = when (PersonFormService(bus).delete(PersonFormState.fromPerson(person))) {
-            is Outcome.Ok -> remapTree(bus.tree.value, selected = null).copy(status = "Человек удалён")
+            is Outcome.Ok -> {
+                person.mediaIds.forEach(opened.mediaRepository::deleteIfUnused)
+                remapTree(bus.tree.value, selected = null).copy(status = "Человек удалён")
+            }
+
             is Outcome.Err -> state.copy(status = "Не удалось удалить человека")
         }
         return state
     }
 
     fun selectPerson(id: PersonId?): AppState {
-        state = remapSelection(commandBus?.tree?.value ?: return state, id)
+        val tree = commandBus?.tree?.value ?: return state
+        val previous = state.selectedPerson?.id
+        val selected = if (state.layoutMode == LayoutMode.WHOLE_FAMILY) {
+            remapSelection(tree, id, center = id != null)
+        } else {
+            state = state.copy(selectedPerson = id?.let(tree::person))
+            remapTree(tree, id)
+        }
+        state = selected.copy(
+            selectionBackHistory = if (previous == null || previous == id) state.selectionBackHistory else state.selectionBackHistory + previous,
+            selectionForwardHistory = if (previous == id) state.selectionForwardHistory else emptyList(),
+        )
+        return state
+    }
+
+    fun navigateBack(): AppState = navigateSelection(state.selectionBackHistory, isBack = true)
+
+    fun navigateForward(): AppState = navigateSelection(state.selectionForwardHistory, isBack = false)
+
+    fun changeLayoutMode(mode: LayoutMode): AppState {
+        state = state.copy(layoutMode = mode)
+        return refreshTree()
+    }
+
+    fun changeLayoutDepth(depth: Int): AppState {
+        state = state.copy(layoutDepth = depth.coerceIn(1, Int.MAX_VALUE))
+        return refreshTree()
+    }
+
+    fun changeSearchFilter(filter: PersonSearchFilter): AppState {
+        val tree = commandBus?.tree?.value ?: return state
+        val results = PersonSearch.find(tree, filter)
+        state = state.copy(searchFilter = filter, searchResults = results)
+        state = remapSelection(tree, state.selectedPerson?.id)
+        return state
+    }
+
+    fun previewGedcom(path: String): AppState {
+        state = when (val preview = GedcomFiles.preview(path)) {
+            is Outcome.Ok -> state.copy(
+                gedcomPreview = GedcomImportState(
+                    people = preview.value.people,
+                    families = preview.value.families,
+                    skippedTags = preview.value.skippedTags,
+                    command = preview.value.command,
+                ),
+                status = "GEDCOM готов к импорту",
+            )
+
+            is Outcome.Err -> state.copy(status = "Не удалось прочитать GEDCOM")
+        }
+        return state
+    }
+
+    fun confirmGedcomImport(): AppState {
+        val preview = state.gedcomPreview ?: return state
+        val bus = commandBus ?: return state
+        state = when (bus.execute(preview.command)) {
+            is Outcome.Ok -> remapTree(bus.tree.value, null).copy(
+                gedcomPreview = null,
+                status = "GEDCOM импортирован: ${preview.people} человек",
+            )
+
+            is Outcome.Err -> state.copy(status = "Не удалось импортировать GEDCOM")
+        }
+        return state
+    }
+
+    fun cancelGedcomImport(): AppState {
+        state = state.copy(gedcomPreview = null)
+        return state
+    }
+
+    fun exportGedcom(path: String): AppState {
+        val tree = commandBus?.tree?.value ?: return state
+        state = when (GedcomFiles.export(tree, path)) {
+            is Outcome.Ok -> state.copy(status = "GEDCOM экспортирован")
+            is Outcome.Err -> state.copy(status = "Не удалось экспортировать GEDCOM")
+        }
+        return state
+    }
+
+    fun undo(): AppState = applyHistory { it.undo() }
+
+    fun redo(): AppState = applyHistory { it.redo() }
+
+    fun importMedia(path: String): AppState {
+        val opened = project ?: return state
+        val person = state.selectedPerson ?: return state
+        val bus = commandBus ?: return state
+        val media = when (val imported = opened.mediaRepository.import(path)) {
+            is Outcome.Ok -> imported.value
+            is Outcome.Err -> {
+                state = state.copy(status = "Не удалось добавить файл")
+                return state
+            }
+        }
+        val updated = when (val value = person.with(mediaIds = person.mediaIds + media.id)) {
+            is Outcome.Ok -> value.value
+            is Outcome.Err -> return state.copy(status = "Этот файл уже добавлен")
+        }
+        state = when (bus.execute(UpdatePerson(updated))) {
+            is Outcome.Ok -> remapTree(bus.tree.value, person.id).copy(status = "Файл добавлен")
+            is Outcome.Err -> {
+                opened.mediaRepository.deleteIfUnused(media.id)
+                state.copy(status = "Не удалось добавить файл")
+            }
+        }
+        return state
+    }
+
+    fun openMedia(id: MediaId): AppState {
+        val opened = project ?: return state
+        val media = when (val found = opened.mediaRepository.find(id)) {
+            is Outcome.Ok -> found.value
+            is Outcome.Err -> return state.copy(status = "Не удалось открыть файл")
+        }
+        val path = when (val content = opened.mediaRepository.contentPath(id)) {
+            is Outcome.Ok -> content.value
+            is Outcome.Err -> return state.copy(status = "Не удалось открыть файл")
+        }
+        state = try {
+            val content = if (media.mimeType.startsWith("image/")) readBoundedImage(Path.of(path)) else byteArrayOf()
+            state.copy(mediaViewer = MediaViewerState(media, content))
+        } catch (_: java.io.IOException) {
+            state.copy(status = "Не удалось открыть файл")
+        } catch (_: IllegalArgumentException) {
+            state.copy(status = "Изображение слишком большое или повреждено")
+        }
+        return state
+    }
+
+    fun changeMediaZoom(zoom: Float): AppState {
+        state = state.copy(mediaViewer = state.mediaViewer?.copy(zoom = zoom.coerceIn(0.25f, 4f)))
+        return state
+    }
+
+    fun closeMedia(): AppState {
+        state = state.copy(mediaViewer = null)
+        return state
+    }
+
+    fun removeMedia(id: MediaId): AppState {
+        val opened = project ?: return state
+        val person = state.selectedPerson ?: return state
+        val bus = commandBus ?: return state
+        val updated = when (val value = person.with(mediaIds = person.mediaIds.filterNot { it == id })) {
+            is Outcome.Ok -> value.value
+            is Outcome.Err -> return state
+        }
+        state = when (bus.execute(UpdatePerson(updated))) {
+            is Outcome.Ok -> {
+                opened.mediaRepository.deleteIfUnused(id)
+                remapTree(bus.tree.value, person.id).copy(status = "Файл удалён")
+            }
+
+            is Outcome.Err -> state.copy(status = "Не удалось удалить файл")
+        }
         return state
     }
 
@@ -93,8 +282,9 @@ class AppController(
 
     fun startCreatingRelative(): AppState {
         val relation = state.relationDialog ?: return state
+        val tree = commandBus?.tree?.value ?: return state
         state = state.copy(
-            personForm = validatePersonForm(PersonFormState()),
+            personForm = validatePersonForm(PersonFormState(customFieldSuggestions = customFieldSuggestions(tree))),
             relationDialog = null,
             pendingRelation = relation,
         )
@@ -113,8 +303,9 @@ class AppController(
         state = when (result) {
             is RelationResult.Success -> remapTree(commandBus?.tree?.value ?: return state, dialog.source.id).copy(
                 relationDialog = null,
-                status = "Связь сохранена",
+                status = result.warnings.firstOrNull()?.warningToRussianMessage() ?: "Связь сохранена",
             )
+
             is RelationResult.Error -> state.copy(relationDialog = dialog.copy(error = result.message))
         }
         return state
@@ -125,16 +316,83 @@ class AppController(
         return state
     }
 
+    fun startResolvingKinship(): AppState {
+        val source = state.selectedPerson ?: return state
+        val tree = commandBus?.tree?.value ?: return state
+        state = state.copy(
+            kinshipDialog = KinshipDialogState(
+                source = source,
+                people = tree.persons.values.filter { it.id != source.id }.sortedBy { it.name.sortKey },
+            ),
+        )
+        return state
+    }
+
+    fun updateKinshipDialog(dialog: KinshipDialogState): AppState {
+        val tree = commandBus?.tree?.value ?: return state
+        val term =
+            dialog.target?.let { target -> kinshipTermLabel(KinshipCalculator.resolve(tree, dialog.source.id, target)) }
+        state = state.copy(kinshipDialog = dialog.copy(term = term))
+        return state
+    }
+
+    fun closeKinshipDialog(): AppState {
+        state = state.copy(kinshipDialog = null)
+        return state
+    }
+
+    fun openStatistics(): AppState {
+        val tree = commandBus?.tree?.value ?: return state
+        state = state.copy(statistics = TreeStatistics.compute(tree))
+        return state
+    }
+
+    fun closeStatistics(): AppState {
+        state = state.copy(statistics = null)
+        return state
+    }
+
+    fun exportPng(path: String): AppState {
+        val canvas = state.canvas
+        state = when (
+            exportTreePng(canvas.layout, canvas.visuals, LightColors, canvas.layout.bounds, DEFAULT_PNG_SCALE, path)
+        ) {
+            is Outcome.Ok -> state.copy(status = "PNG экспортирован")
+            is Outcome.Err -> state.copy(status = "Не удалось экспортировать PNG")
+        }
+        return state
+    }
+
+    fun exportPdf(path: String): AppState {
+        val tree = commandBus?.tree?.value ?: return state
+        state = when (PdfFiles.export(tree, path)) {
+            is Outcome.Ok -> state.copy(status = "PDF экспортирован")
+            is Outcome.Err -> state.copy(status = "Не удалось экспортировать PDF")
+        }
+        return state
+    }
+
+    private fun kinshipTermLabel(result: KinshipResult): String = when (result) {
+        KinshipResult.SamePerson -> "Тот же человек"
+        is KinshipResult.Blood -> result.term
+        is KinshipResult.InLaw -> result.term
+        KinshipResult.Unrelated -> "Родственная связь не найдена"
+    }
+
     fun savePerson(): AppState {
         val form = state.personForm ?: return state
         val bus = commandBus ?: return state
         val pending = state.pendingRelation
         state = if (pending == null) {
-            when (PersonFormService(bus).save(form)) {
-                is Outcome.Ok -> remapTree(bus.tree.value, selected = form.id).copy(
-                    personForm = null,
-                    status = "Человек сохранён",
-                )
+            when (val result = PersonFormService(bus).save(form)) {
+                is Outcome.Ok -> {
+                    val warnings = result.value.map { it.warningToRussianMessage() }
+                    remapTree(bus.tree.value, selected = form.id).copy(
+                        personForm = null,
+                        status = warnings.firstOrNull() ?: "Человек сохранён",
+                    )
+                }
+
                 is Outcome.Err -> state.copy(personForm = form.copy(blockingError = "Не удалось сохранить человека"))
             }
         } else {
@@ -146,12 +404,25 @@ class AppController(
     fun updateCanvas(intent: TreeCanvasIntent): AppState {
         val canvas = reduceTreeCanvas(state.canvas, intent)
         state = when (intent) {
-            is TreeCanvasIntent.SelectAt -> remapSelection(commandBus?.tree?.value ?: return state, canvas.selected?.toPersonId())
+            is TreeCanvasIntent.SelectAt -> {
+                val selected = canvas.selected?.toPersonId()
+                val previous = state.selectedPerson?.id
+                remapSelection(
+                    commandBus?.tree?.value ?: return state,
+                    selected,
+                    source = state.copy(canvas = canvas)
+                ).copy(
+                    selectionBackHistory = if (previous == null || previous == selected) state.selectionBackHistory else state.selectionBackHistory + previous,
+                    selectionForwardHistory = if (previous == selected) state.selectionForwardHistory else emptyList(),
+                )
+            }
+
             is TreeCanvasIntent.EditAt -> {
                 val selected = canvas.spatialIndex.hitTest(canvas.camera.screenToWorld(intent.position))?.toPersonId()
                 remapSelection(commandBus?.tree?.value ?: return state, selected).also { state = it }
                 startEditingPerson()
             }
+
             else -> state.copy(canvas = canvas)
         }
         return state
@@ -164,7 +435,23 @@ class AppController(
     }
 
     fun cancelPerson(): AppState {
+        val form = state.personForm ?: return state
+        val requested = commandBus?.let { PersonFormService(it).requestCancel(form) } ?: form
+        state = if (requested.isDiscardConfirmationVisible) {
+            state.copy(personForm = requested)
+        } else {
+            state.copy(personForm = null, pendingRelation = null)
+        }
+        return state
+    }
+
+    fun confirmDiscardPerson(): AppState {
         state = state.copy(personForm = null, pendingRelation = null)
+        return state
+    }
+
+    fun keepEditingPerson(): AppState {
+        state = state.copy(personForm = state.personForm?.copy(isDiscardConfirmationVisible = false))
         return state
     }
 
@@ -174,22 +461,44 @@ class AppController(
             is Outcome.Err -> return state.copy(personForm = form.copy(blockingError = "Не удалось сохранить человека"))
         }
         val result = when (relation.mode) {
-            RelationMode.PARENT -> RelationEditor(bus).addParentWithPerson(person, relation.source.id, relation.parentKind)
-            RelationMode.CHILD -> RelationEditor(bus).addChildWithPerson(person, relation.source.id, relation.parentKind)
-            RelationMode.SPOUSE -> RelationEditor(bus).addSpouseWithPerson(person, relation.source.id, relation.marriageStatus)
+            RelationMode.PARENT -> RelationEditor(bus).addParentWithPerson(
+                person,
+                relation.source.id,
+                relation.parentKind
+            )
+
+            RelationMode.CHILD -> RelationEditor(bus).addChildWithPerson(
+                person,
+                relation.source.id,
+                relation.parentKind
+            )
+
+            RelationMode.SPOUSE -> RelationEditor(bus).addSpouseWithPerson(
+                person,
+                relation.source.id,
+                relation.marriageStatus
+            )
         }
         return when (result) {
             is RelationResult.Success -> remapTree(bus.tree.value, relation.source.id).copy(
                 personForm = null,
                 pendingRelation = null,
-                status = "Человек и связь сохранены",
+                status = result.warnings.firstOrNull()?.warningToRussianMessage() ?: "Человек и связь сохранены",
             )
+
             is RelationResult.Error -> state.copy(personForm = form.copy(blockingError = result.message))
         }
     }
 
     private fun mappedCanvas(tree: FamilyTree): TreeCanvasState {
-        val mapped = TreeCanvasMapper.map(tree).copy(viewport = state.canvas.viewport)
+        val root = state.selectedPerson?.id?.takeIf { tree.person(it) != null }?.toNodeId()
+        val mode = if (root == null) LayoutMode.WHOLE_FAMILY else state.layoutMode
+        val options = LayoutOptions(
+            root = root,
+            mode = mode,
+            depth = state.layoutDepth,
+        )
+        val mapped = TreeCanvasMapper.map(tree, options).copy(viewport = state.canvas.viewport)
         return if (mapped.viewport.width > 0.0 && mapped.viewport.height > 0.0 && mapped.layout.nodes.isNotEmpty()) {
             reduceTreeCanvas(mapped, TreeCanvasIntent.FitToScreen)
         } else {
@@ -198,32 +507,96 @@ class AppController(
     }
 
     private fun remapTree(tree: FamilyTree, selected: PersonId?): AppState {
-        val source = state.copy(personCount = tree.size, canvas = mappedCanvas(tree))
-        return remapSelection(tree, selected, source)
+        val results = if (state.searchFilter.isEmpty()) emptyList() else PersonSearch.find(tree, state.searchFilter)
+        val source = state.copy(personCount = tree.size, canvas = mappedCanvas(tree), searchResults = results)
+        return remapSelection(tree, selected, source).withHistory()
     }
 
-    private fun remapSelection(tree: FamilyTree, selected: PersonId?, source: AppState = state): AppState {
+    private fun remapSelection(
+        tree: FamilyTree,
+        selected: PersonId?,
+        source: AppState = state,
+        center: Boolean = false,
+    ): AppState {
         val person = selected?.let(tree::person)
         val relations = selected?.let(tree::relationsOf).orEmpty()
-        val parents = relations.filterIsInstance<ParentChild>().filter { it.child == selected }.mapNotNull { tree.person(it.parent) }
-        val children = relations.filterIsInstance<ParentChild>().filter { it.parent == selected }.mapNotNull { tree.person(it.child) }
+        val parents = relations.filterIsInstance<ParentChild>().filter { it.child == selected }
+            .mapNotNull { tree.person(it.parent) }
+        val children = relations.filterIsInstance<ParentChild>().filter { it.parent == selected }
+            .mapNotNull { tree.person(it.child) }
         val spouses = relations.filterIsInstance<Marriage>().mapNotNull { relation ->
             relation.spouseOf(selected ?: return@mapNotNull null)?.let(tree::person)
         }
         val relatedPeople = selected?.let { KinshipRoles.resolve(tree, it) }.orEmpty()
+        val selectedMedia = person?.mediaIds.orEmpty().mapNotNull { id ->
+            when (val media = project?.mediaRepository?.find(id)) {
+                is Outcome.Ok -> media.value
+                is Outcome.Err, null -> null
+            }
+        }
         val highlight = TreeHighlight(
             selected = person?.id?.toNodeId(),
             roles = relatedPeople.associate { it.person.id.toNodeId() to it.role },
+            searchResults = source.searchResults.mapTo(mutableSetOf()) { it.id.toNodeId() },
         )
+        val highlightedCanvas = source.canvas.copy(highlight = highlight)
+        val canvas = if (center && person != null) {
+            reduceTreeCanvas(highlightedCanvas, TreeCanvasIntent.CenterSelected)
+        } else {
+            highlightedCanvas
+        }
         return source.copy(
-            canvas = source.canvas.copy(highlight = highlight),
+            canvas = canvas,
             selectedPerson = person,
             selectedParents = parents,
             selectedChildren = children,
             selectedSpouses = spouses,
+            selectedMedia = selectedMedia,
             relatedPeople = relatedPeople,
         )
     }
+
+    private fun navigateSelection(history: List<PersonId>, isBack: Boolean): AppState {
+        val target = history.lastOrNull() ?: return state
+        val current = state.selectedPerson?.id
+        val tree = commandBus?.tree?.value ?: return state
+        state = remapSelection(tree, target, center = true).copy(
+            selectionBackHistory = if (isBack) history.dropLast(1) else state.selectionBackHistory + listOfNotNull(
+                current
+            ),
+            selectionForwardHistory = if (isBack) state.selectionForwardHistory + listOfNotNull(current) else history.dropLast(
+                1
+            ),
+        )
+        return state
+    }
+
+    private fun applyHistory(action: (HistoryController) -> me.terevo.ui.tree.HistoryState): AppState {
+        val bus = commandBus ?: return state
+        val history = action(HistoryController(bus))
+        val selected = history.centerOn?.toPersonId() ?: state.selectedPerson?.id
+        state = remapTree(bus.tree.value, selected)
+        if (history.centerOn != null) {
+            state = state.copy(canvas = reduceTreeCanvas(state.canvas, TreeCanvasIntent.CenterSelected))
+        }
+        return state
+    }
+
+    private fun AppState.withHistory(): AppState {
+        val bus = commandBus ?: return copy(canUndo = false, canRedo = false)
+        val history = HistoryController(bus).state()
+        return copy(
+            canUndo = history.canUndo,
+            canRedo = history.canRedo,
+            undoLabel = history.undoLabel,
+            redoLabel = history.redoLabel,
+        )
+    }
+
+    private fun customFieldSuggestions(tree: FamilyTree): List<String> = tree.persons.values
+        .flatMap { it.customFields.keys }
+        .distinct()
+        .sorted()
 
     override fun close() {
         project?.close()
@@ -266,6 +639,23 @@ private fun me.terevo.layout.NodeId.toPersonId(): PersonId = PersonId.parse(valu
 
 private fun PersonId.toNodeId(): me.terevo.layout.NodeId = me.terevo.layout.NodeId(value.toString())
 
+private fun readBoundedImage(path: Path): ByteArray {
+    require(Files.size(path) <= MAX_IMAGE_FILE_BYTES)
+    ImageIO.createImageInputStream(path.toFile()).use { input ->
+        requireNotNull(input)
+        val readers = ImageIO.getImageReaders(input)
+        require(readers.hasNext())
+        val reader = readers.next()
+        try {
+            reader.input = input
+            require(reader.getWidth(0) <= MAX_IMAGE_DIMENSION && reader.getHeight(0) <= MAX_IMAGE_DIMENSION)
+        } finally {
+            reader.dispose()
+        }
+    }
+    return Files.readAllBytes(path)
+}
+
 fun DomainError.toRussianMessage(): String = when (this) {
     is DomainError.Project.AlreadyExists -> "Файл проекта уже существует"
     is DomainError.Project.NotFound -> "Файл проекта не найден"
@@ -277,3 +667,7 @@ fun DomainError.toRussianMessage(): String = when (this) {
     is DomainError.Storage.CorruptedRecord -> "В проекте обнаружены повреждённые данные"
     else -> "Не удалось открыть проект"
 }
+
+private const val MAX_IMAGE_FILE_BYTES: Long = 25L * 1024L * 1024L
+private const val MAX_IMAGE_DIMENSION: Int = 10_000
+private const val DEFAULT_PNG_SCALE: Double = 1.0

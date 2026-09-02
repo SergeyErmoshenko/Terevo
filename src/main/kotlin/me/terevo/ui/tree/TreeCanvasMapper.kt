@@ -8,6 +8,7 @@ import me.terevo.domain.model.Person
 import me.terevo.layout.CachedLayoutEngine
 import me.terevo.layout.LayoutEdge
 import me.terevo.layout.LayoutNode
+import me.terevo.layout.LayoutOptions
 import me.terevo.layout.LayoutRequest
 import me.terevo.layout.NodeId
 import me.terevo.layout.NodeMetrics
@@ -19,7 +20,7 @@ object TreeCanvasMapper {
     private val engine = CachedLayoutEngine()
     private val cardSize = Size(width = 200.0, height = 72.0)
 
-    fun map(tree: FamilyTree): TreeCanvasState {
+    fun map(tree: FamilyTree, options: LayoutOptions = LayoutOptions()): TreeCanvasState {
         val nodes = tree.persons.values.map { person ->
             LayoutNode(person.id.toNodeId(), person.name.sortKey)
         }
@@ -39,7 +40,7 @@ object TreeCanvasMapper {
         }
         val graph = TreeGraph.of(nodes, edges)
         val metrics = NodeMetrics(nodes.associate { it.id to cardSize }, cardSize)
-        val layout = engine.layout(LayoutRequest(graph, metrics))
+        val layout = engine.layout(LayoutRequest(graph, metrics, options))
         val visuals = TreeVisuals(tree.persons.values.associate { person -> person.id.toNodeId() to person.toVisual() })
         return TreeCanvasState(
             layout = layout,

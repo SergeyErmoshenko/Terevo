@@ -37,7 +37,7 @@ object TerevoTypography {
     val material: Typography = Typography()
 }
 
-private val LightColors = TerevoColors(
+internal val LightColors = TerevoColors(
     canvas = Color(0xFFF6F7F9),
     sidebar = Color(0xFFFFFFFF),
     statusBar = Color(0xFFE9ECF1),

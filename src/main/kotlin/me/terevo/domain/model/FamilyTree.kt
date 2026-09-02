@@ -128,7 +128,7 @@ class FamilyTree private constructor(
 
     override fun toString(): String = "FamilyTree(${persons.size} persons, ${relations.size} relations)"
 
-    private fun parentLinksOf(child: PersonId): List<ParentChild> =
+    fun parentLinksOf(child: PersonId): List<ParentChild> =
         relationsOf(child).filterIsInstance<ParentChild>().filter { it.child == child }
 
     private fun traverse(start: PersonId, depth: Int, next: (PersonId) -> List<PersonId>): Set<PersonId> {

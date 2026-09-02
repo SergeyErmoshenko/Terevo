@@ -2,7 +2,7 @@ package me.terevo.ui.person
 
 import kotlinx.datetime.LocalDate
 
-fun LocalDate.toDisplayDate(): String = "%02d.%02d.%04d".format(dayOfMonth, monthNumber, year)
+fun LocalDate.toDisplayDate(): String = "%02d.%02d.%04d".format(day, month.ordinal + 1, year)
 
 fun parseDisplayDate(value: String): LocalDate {
     val match = DATE_PATTERN.matchEntire(value.trim()) ?: throw IllegalArgumentException()

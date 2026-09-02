@@ -22,6 +22,9 @@ CREATE INDEX person_media_person ON person_media(person_id);
 selectAllMedia:
 SELECT * FROM media;
 
+selectMediaById:
+SELECT * FROM media WHERE id = ?;
+
 selectMediaBySha:
 SELECT * FROM media WHERE sha256 = ?;
 

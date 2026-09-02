@@ -61,6 +61,10 @@ class ProjectBackups(
     companion object {
         const val DEFAULT_KEEP: Int = 5
 
-        fun directoryOf(project: Path): Path = project.resolveSibling("${project.fileName}.backup")
+        fun directoryOf(project: Path): Path = if (project.fileName.toString() == ProjectLocation.DEFAULT_FILE_NAME) {
+            project.parent.resolve(ProjectLocation.BACKUP_DIRECTORY)
+        } else {
+            project.resolveSibling("${project.fileName}.backup")
+        }
     }
 }

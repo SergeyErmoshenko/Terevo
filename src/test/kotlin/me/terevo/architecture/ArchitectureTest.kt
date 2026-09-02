@@ -42,6 +42,46 @@ class ArchitectureTest {
     }
 
     @Test
+    fun `kinship depends on nothing but domain and stdlib`() {
+        val violations = productionFilesOf("me.terevo.kinship")
+            .flatMap { file ->
+                file.imports
+                    .map { it.name }
+                    .filterNot { imported ->
+                        imported.startsWith("kotlin.") ||
+                                imported.startsWith("java.") ||
+                                imported.startsWith("me.terevo.domain")
+                    }
+                    .map { "${file.name}: $it" }
+            }
+
+        assertTrue(
+            violations.isEmpty(),
+            "Kinship may import only domain and stdlib\n" + violations.joinToString("\n"),
+        )
+    }
+
+    @Test
+    fun `statistics depends on nothing but domain and stdlib`() {
+        val violations = productionFilesOf("me.terevo.statistics")
+            .flatMap { file ->
+                file.imports
+                    .map { it.name }
+                    .filterNot { imported ->
+                        imported.startsWith("kotlin.") ||
+                                imported.startsWith("java.") ||
+                                imported.startsWith("me.terevo.domain")
+                    }
+                    .map { "${file.name}: $it" }
+            }
+
+        assertTrue(
+            violations.isEmpty(),
+            "Statistics may import only domain and stdlib\n" + violations.joinToString("\n"),
+        )
+    }
+
+    @Test
     fun `ui does not reach storage directly`() {
         assertNoImports(
             layer = "me.terevo.ui",
@@ -62,6 +102,10 @@ class ArchitectureTest {
         )
         assertNoImports(
             layer = "me.terevo.gedcom",
+            forbidden = listOf("androidx.compose", "me.terevo.ui", "me.terevo.app"),
+        )
+        assertNoImports(
+            layer = "me.terevo.export",
             forbidden = listOf("androidx.compose", "me.terevo.ui", "me.terevo.app"),
         )
     }
