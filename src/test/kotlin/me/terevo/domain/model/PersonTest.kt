@@ -1,14 +1,14 @@
 package me.terevo.domain.model
 
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotEquals
-import kotlin.test.assertTrue
 import me.terevo.domain.DomainError
 import me.terevo.testing.name
 import me.terevo.testing.person
 import me.terevo.testing.shouldBeErr
 import me.terevo.testing.shouldBeOk
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 
 class PersonTest {
 
@@ -60,6 +60,24 @@ class PersonTest {
         val created = Person.create(name = name(), notes = "  запись  ").shouldBeOk()
 
         assertEquals("запись", created.notes)
+    }
+
+    @Test
+    fun `occupation is trimmed`() {
+        val created = Person.create(name = name(), occupation = "  врач  ").shouldBeOk()
+
+        assertEquals("врач", created.occupation)
+    }
+
+    @Test
+    fun `with replaces residence and occupation`() {
+        val original = person(surname = "Иванов")
+        val residence = Place.of("Москва").shouldBeOk()
+
+        val updated = original.with(residence = residence, occupation = "инженер").shouldBeOk()
+
+        assertEquals(residence, updated.residence)
+        assertEquals("инженер", updated.occupation)
     }
 
     @Test

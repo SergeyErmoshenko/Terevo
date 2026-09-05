@@ -1,17 +1,10 @@
 package me.terevo.persistence
 
-import java.util.UUID
 import me.terevo.domain.DomainError
 import me.terevo.domain.Outcome
 import me.terevo.domain.getOrNull
-import me.terevo.domain.model.Coordinates
-import me.terevo.domain.model.Gender
-import me.terevo.domain.model.LifeSpan
-import me.terevo.domain.model.MediaId
-import me.terevo.domain.model.Person
-import me.terevo.domain.model.PersonId
-import me.terevo.domain.model.PersonName
-import me.terevo.domain.model.Place
+import me.terevo.domain.model.*
+import java.util.*
 import me.terevo.persistence.db.Person as PersonRow
 
 data class PersonColumns(
@@ -29,6 +22,10 @@ data class PersonColumns(
     val deathPlace: String?,
     val deathLatitude: Double?,
     val deathLongitude: Double?,
+    val residence: String?,
+    val residenceLatitude: Double?,
+    val residenceLongitude: Double?,
+    val occupation: String,
     val notes: String,
 )
 
@@ -49,6 +46,10 @@ object PersonMapper {
         deathPlace = person.deathPlace?.title,
         deathLatitude = person.deathPlace?.coordinates?.latitude,
         deathLongitude = person.deathPlace?.coordinates?.longitude,
+        residence = person.residence?.title,
+        residenceLatitude = person.residence?.coordinates?.latitude,
+        residenceLongitude = person.residence?.coordinates?.longitude,
+        occupation = person.occupation,
         notes = person.notes,
     )
 
@@ -78,6 +79,8 @@ object PersonMapper {
             lifeSpan = lifeSpan,
             birthPlace = place(row.birth_place, row.birth_latitude, row.birth_longitude),
             deathPlace = place(row.death_place, row.death_latitude, row.death_longitude),
+            residence = place(row.residence, row.residence_latitude, row.residence_longitude),
+            occupation = row.occupation,
             notes = row.notes,
             customFields = customFields,
             mediaIds = mediaIds,

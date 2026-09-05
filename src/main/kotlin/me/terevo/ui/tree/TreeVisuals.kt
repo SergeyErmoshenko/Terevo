@@ -13,10 +13,11 @@ enum class PersonVisualGender {
 
 data class PersonVisual(
     val id: NodeId,
-    val name: String,
+    val nameLines: List<String>,
     val lifeYears: String,
     val gender: PersonVisualGender,
     val version: Long,
+    val thumbnailPath: String? = null,
 )
 
 data class TreeVisuals(

@@ -1,28 +1,19 @@
 package me.terevo.persistence
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import me.terevo.domain.DomainError
+import me.terevo.domain.Outcome
+import me.terevo.domain.port.*
+import me.terevo.persistence.db.TerevoDatabase
 import java.io.IOException
 import java.nio.channels.FileChannel
 import java.nio.channels.FileLock
 import java.nio.channels.OverlappingFileLockException
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.StandardCopyOption
-import java.nio.file.StandardOpenOption
+import java.nio.file.*
 import java.security.MessageDigest
 import java.sql.SQLException
 import java.time.Instant
-import java.util.Properties
-import java.util.UUID
-import me.terevo.domain.DomainError
-import me.terevo.domain.Outcome
-import me.terevo.domain.port.MediaRepository
-import me.terevo.domain.port.OpenProject
-import me.terevo.domain.port.ProjectLocation
-import me.terevo.domain.port.ProjectService
-import me.terevo.domain.port.TreeRepository
-import me.terevo.persistence.db.TerevoDatabase
+import java.util.*
 
 class SqliteProjectService(
     private val appVersion: String = "0.1.0",
@@ -167,6 +158,7 @@ private class SqliteOpenProject(
 
     override val repository: TreeRepository = SqlDelightTreeRepository(database)
     override val mediaRepository: MediaRepository = ProjectMediaRepository(database, Path.of(location.path))
+    override val nodePositionRepository: NodePositionRepository = SqlNodePositionRepository(database)
 
     override fun saveAs(target: ProjectLocation): Outcome<OpenProject> {
         val targetFile = Path.of(target.path)

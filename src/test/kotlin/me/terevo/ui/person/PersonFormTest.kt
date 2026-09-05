@@ -1,12 +1,6 @@
 package me.terevo.ui.person
 
 import kotlinx.datetime.LocalDate
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertIs
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
 import me.terevo.domain.Outcome
 import me.terevo.domain.command.CommandBus
 import me.terevo.domain.model.DatePrecision
@@ -14,6 +8,7 @@ import me.terevo.domain.model.EventDate
 import me.terevo.domain.model.FamilyTree
 import me.terevo.domain.model.Gender
 import me.terevo.testing.InMemoryTreeRepository
+import kotlin.test.*
 
 class PersonFormTest {
 
@@ -113,6 +108,28 @@ class PersonFormTest {
         assertEquals(mapOf("Профессия" to "врач"), person.customFields)
         assertEquals(listOf(CustomFieldInput("Профессия", "врач")), restored.customFields)
         assertEquals(listOf("Профессия", "Награды"), restored.customFieldSuggestions)
+    }
+
+    @Test
+    fun `residence and occupation map to domain and survive edit form round trip`() {
+        val state = PersonFormState(surname = "Иванов", residence = "Казань", occupation = "врач")
+
+        val person = (state.toPerson() as Outcome.Ok).value
+        val restored = PersonFormState.fromPerson(person)
+
+        assertEquals("Казань", person.residence?.title)
+        assertEquals("врач", person.occupation)
+        assertEquals("Казань", restored.residence)
+        assertEquals("врач", restored.occupation)
+    }
+
+    @Test
+    fun `pending media paths make an otherwise unchanged form dirty`() {
+        val person = (PersonFormState(surname = "Иванов").toPerson() as Outcome.Ok).value
+        val restored = PersonFormState.fromPerson(person)
+
+        assertFalse(restored.isDirty)
+        assertTrue(restored.copy(pendingMediaPaths = listOf("/tmp/photo.txt")).isDirty)
     }
 
     @Test

@@ -38,10 +38,10 @@ class ParentChild private constructor(
 
     override fun equals(other: Any?): Boolean =
         other is ParentChild &&
-            id == other.id &&
-            parent == other.parent &&
-            child == other.child &&
-            kind == other.kind
+                id == other.id &&
+                parent == other.parent &&
+                child == other.child &&
+                kind == other.kind
 
     override fun hashCode(): Int {
         var result = id.hashCode()
@@ -77,6 +77,7 @@ class Marriage private constructor(
     val since: EventDate,
     val until: EventDate,
     val status: MarriageStatus,
+    val place: Place?,
 ) : Relation {
     override val participants: Set<PersonId> get() = setOf(spouseA, spouseB)
 
@@ -90,16 +91,18 @@ class Marriage private constructor(
         since: EventDate = this.since,
         until: EventDate = this.until,
         status: MarriageStatus = this.status,
-    ): Outcome<Marriage> = of(id, spouseA, spouseB, since, until, status)
+        place: Place? = this.place,
+    ): Outcome<Marriage> = of(id, spouseA, spouseB, since, until, status, place)
 
     override fun equals(other: Any?): Boolean =
         other is Marriage &&
-            id == other.id &&
-            spouseA == other.spouseA &&
-            spouseB == other.spouseB &&
-            since == other.since &&
-            until == other.until &&
-            status == other.status
+                id == other.id &&
+                spouseA == other.spouseA &&
+                spouseB == other.spouseB &&
+                since == other.since &&
+                until == other.until &&
+                status == other.status &&
+                place == other.place
 
     override fun hashCode(): Int {
         var result = id.hashCode()
@@ -108,6 +111,7 @@ class Marriage private constructor(
         result = result * PRIME + since.hashCode()
         result = result * PRIME + until.hashCode()
         result = result * PRIME + status.hashCode()
+        result = result * PRIME + place.hashCode()
         return result
     }
 
@@ -124,13 +128,14 @@ class Marriage private constructor(
             since: EventDate = EventDate.Unknown,
             until: EventDate = EventDate.Unknown,
             status: MarriageStatus = MarriageStatus.MARRIED,
+            place: Place? = null,
         ): Outcome<Marriage> {
             if (first == second) return Outcome.Err(DomainError.Link.SelfRelation(first))
             if (until.definitelyBefore(since)) {
                 return Outcome.Err(DomainError.Link.MarriageEndsBeforeStart(since, until))
             }
             val ordered = if (first.value <= second.value) first to second else second to first
-            return Outcome.Ok(Marriage(id, ordered.first, ordered.second, since, until, status))
+            return Outcome.Ok(Marriage(id, ordered.first, ordered.second, since, until, status, place))
         }
     }
 }

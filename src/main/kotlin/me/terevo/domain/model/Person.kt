@@ -1,11 +1,6 @@
 package me.terevo.domain.model
 
-import kotlinx.collections.immutable.PersistentList
-import kotlinx.collections.immutable.PersistentMap
-import kotlinx.collections.immutable.persistentListOf
-import kotlinx.collections.immutable.persistentMapOf
-import kotlinx.collections.immutable.toPersistentList
-import kotlinx.collections.immutable.toPersistentMap
+import kotlinx.collections.immutable.*
 import me.terevo.domain.DomainError
 import me.terevo.domain.Outcome
 
@@ -16,6 +11,8 @@ class Person private constructor(
     val lifeSpan: LifeSpan,
     val birthPlace: Place?,
     val deathPlace: Place?,
+    val residence: Place?,
+    val occupation: String,
     val notes: String,
     val customFields: PersistentMap<String, String>,
     val mediaIds: PersistentList<MediaId>,
@@ -29,6 +26,8 @@ class Person private constructor(
         lifeSpan: LifeSpan = this.lifeSpan,
         birthPlace: Place? = this.birthPlace,
         deathPlace: Place? = this.deathPlace,
+        residence: Place? = this.residence,
+        occupation: String = this.occupation,
         notes: String = this.notes,
         customFields: Map<String, String> = this.customFields,
         mediaIds: List<MediaId> = this.mediaIds,
@@ -39,6 +38,8 @@ class Person private constructor(
         lifeSpan = lifeSpan,
         birthPlace = birthPlace,
         deathPlace = deathPlace,
+        residence = residence,
+        occupation = occupation,
         notes = notes,
         customFields = customFields,
         mediaIds = mediaIds,
@@ -46,15 +47,17 @@ class Person private constructor(
 
     override fun equals(other: Any?): Boolean =
         other is Person &&
-            id == other.id &&
-            name == other.name &&
-            gender == other.gender &&
-            lifeSpan == other.lifeSpan &&
-            birthPlace == other.birthPlace &&
-            deathPlace == other.deathPlace &&
-            notes == other.notes &&
-            customFields == other.customFields &&
-            mediaIds == other.mediaIds
+                id == other.id &&
+                name == other.name &&
+                gender == other.gender &&
+                lifeSpan == other.lifeSpan &&
+                birthPlace == other.birthPlace &&
+                deathPlace == other.deathPlace &&
+                residence == other.residence &&
+                occupation == other.occupation &&
+                notes == other.notes &&
+                customFields == other.customFields &&
+                mediaIds == other.mediaIds
 
     override fun hashCode(): Int {
         var result = id.hashCode()
@@ -63,6 +66,8 @@ class Person private constructor(
         result = result * PRIME + lifeSpan.hashCode()
         result = result * PRIME + birthPlace.hashCode()
         result = result * PRIME + deathPlace.hashCode()
+        result = result * PRIME + residence.hashCode()
+        result = result * PRIME + occupation.hashCode()
         result = result * PRIME + notes.hashCode()
         result = result * PRIME + customFields.hashCode()
         result = result * PRIME + mediaIds.hashCode()
@@ -82,6 +87,8 @@ class Person private constructor(
             lifeSpan: LifeSpan = LifeSpan.UNKNOWN,
             birthPlace: Place? = null,
             deathPlace: Place? = null,
+            residence: Place? = null,
+            occupation: String = "",
             notes: String = "",
             customFields: Map<String, String> = emptyMap(),
             mediaIds: List<MediaId> = emptyList(),
@@ -101,6 +108,8 @@ class Person private constructor(
                     lifeSpan = lifeSpan,
                     birthPlace = birthPlace,
                     deathPlace = deathPlace,
+                    residence = residence,
+                    occupation = occupation.trim(),
                     notes = notes.trim(),
                     customFields = customFields.mapKeys { it.key.trim() }.toPersistentMap(),
                     mediaIds = mediaIds.toPersistentList(),

@@ -8,7 +8,11 @@ value class ProjectLocation(val path: String) {
         get() = path.substringAfterLast('/').substringAfterLast('\\')
 
     val displayName: String
-        get() = fileName.removeSuffix(".$EXTENSION")
+        get() = if (fileName == DEFAULT_FILE_NAME) {
+            path.removeSuffix(fileName).trimEnd('/', '\\').substringAfterLast('/').substringAfterLast('\\')
+        } else {
+            fileName.removeSuffix(".$EXTENSION")
+        }
 
     override fun toString(): String = path
 
@@ -26,6 +30,7 @@ interface OpenProject {
     val schemaVersion: Long
     val repository: TreeRepository
     val mediaRepository: MediaRepository get() = MediaRepository.NONE
+    val nodePositionRepository: NodePositionRepository get() = NodePositionRepository.NONE
 
     fun saveAs(target: ProjectLocation): Outcome<OpenProject>
 

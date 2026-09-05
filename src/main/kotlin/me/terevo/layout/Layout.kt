@@ -14,6 +14,11 @@ enum class EdgeStyle {
     DISSOLVED_MARRIAGE,
 }
 
+enum class LayoutDirection {
+    TOP_DOWN,
+    LEFT_RIGHT,
+}
+
 data class NodeMetrics(
     val sizes: Map<NodeId, Size>,
     val defaultSize: Size,
@@ -29,6 +34,7 @@ data class LayoutOptions(
     val subtreeSpacing: Double = DEFAULT_SUBTREE_SPACING,
     val generationSpacing: Double = DEFAULT_GENERATION_SPACING,
     val spouseSpacing: Double = DEFAULT_SPOUSE_SPACING,
+    val direction: LayoutDirection = LayoutDirection.TOP_DOWN,
 ) {
     companion object {
         const val UNLIMITED_DEPTH: Int = Int.MAX_VALUE

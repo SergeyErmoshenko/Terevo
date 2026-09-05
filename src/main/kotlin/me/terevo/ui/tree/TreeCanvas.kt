@@ -5,12 +5,15 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.rememberTextMeasurer
+import me.terevo.layout.NodeId
 import me.terevo.layout.Point
 import me.terevo.layout.Size
 import me.terevo.ui.theme.TerevoTheme
@@ -23,6 +26,8 @@ fun TreeCanvas(
 ) {
     val textMeasurer = rememberTextMeasurer()
     val colors = TerevoTheme.colors
+    val cornerRadiusPx = with(LocalDensity.current) { TerevoTheme.spacing.cornerRadius.toPx() }
+    val latestState = rememberUpdatedState(state)
     Canvas(
         modifier
             .fillMaxSize()
@@ -47,16 +52,38 @@ fun TreeCanvas(
                 )
             }
             .pointerInput(Unit) {
-                detectDragGestures { change, dragAmount ->
+                var draggedNode: NodeId? = null
+                detectDragGestures(
+                    onDragStart = { offset ->
+                        val world = latestState.value.camera.screenToWorld(offset.toPoint())
+                        val hit = latestState.value.spatialIndex.hitTest(world)
+                        draggedNode = hit
+                        if (hit != null) onIntent(TreeCanvasIntent.DragNodeStart(hit, offset.toPoint()))
+                    },
+                    onDragEnd = {
+                        if (draggedNode != null) onIntent(TreeCanvasIntent.DragNodeEnd)
+                        draggedNode = null
+                    },
+                    onDragCancel = {
+                        if (draggedNode != null) onIntent(TreeCanvasIntent.DragNodeCancel)
+                        draggedNode = null
+                    },
+                ) { change, dragAmount ->
                     change.consume()
-                    onIntent(TreeCanvasIntent.Pan(dragAmount.toPoint()))
+                    if (draggedNode != null) {
+                        onIntent(TreeCanvasIntent.DragNodeMove(change.position.toPoint()))
+                    } else {
+                        onIntent(TreeCanvasIntent.Pan(dragAmount.toPoint()))
+                    }
                 }
             },
     ) {
         val viewport = state.camera.visibleWorld(size.width.toDouble(), size.height.toDouble())
+        drawDotGrid(state.camera, colors, viewport)
         val visible = state.spatialIndex.visible(state.layout, viewport)
         val layout = state.layout.copy(nodes = visible.nodes, edges = visible.edges)
-        drawTree(layout, state.visuals, state.camera, colors, textMeasurer, state.highlight)
+        drawTree(layout, state.visuals, state.camera, colors, textMeasurer, state.highlight, cornerRadiusPx)
+        state.nodeDrag?.let { drawDragPreview(it, state.layout, state.camera, colors, cornerRadiusPx) }
     }
 }
 

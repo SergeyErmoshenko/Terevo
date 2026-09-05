@@ -5,8 +5,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
+import me.terevo.ui.theme.TerevoTheme
 import java.io.File
 import java.io.IOException
 import me.terevo.domain.DomainError
@@ -44,9 +46,10 @@ fun exportTreePng(
     )
     val scene = ImageComposeScene(width, height) {
         val textMeasurer = rememberTextMeasurer()
+        val cornerRadiusPx = with(LocalDensity.current) { TerevoTheme.spacing.cornerRadius.toPx() }
         Canvas(Modifier.size(width.dp, height.dp)) {
             drawRect(color = colors.canvas, size = size)
-            drawTree(layout, visuals, camera, colors, textMeasurer, TreeHighlight.NONE)
+            drawTree(layout, visuals, camera, colors, textMeasurer, TreeHighlight.NONE, cornerRadiusPx)
         }
     }
     return try {

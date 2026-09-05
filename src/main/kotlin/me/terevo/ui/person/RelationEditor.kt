@@ -2,21 +2,9 @@ package me.terevo.ui.person
 
 import me.terevo.domain.DomainError
 import me.terevo.domain.Outcome
-import me.terevo.domain.command.AddPerson
-import me.terevo.domain.command.AddRelation
-import me.terevo.domain.command.Batch
-import me.terevo.domain.command.Command
-import me.terevo.domain.command.CommandBus
-import me.terevo.domain.command.RemoveRelation
+import me.terevo.domain.command.*
 import me.terevo.domain.invariant.ValidationWarning
-import me.terevo.domain.model.FamilyTree
-import me.terevo.domain.model.Marriage
-import me.terevo.domain.model.MarriageStatus
-import me.terevo.domain.model.ParentChild
-import me.terevo.domain.model.ParentKind
-import me.terevo.domain.model.Person
-import me.terevo.domain.model.PersonId
-import me.terevo.domain.model.RelationId
+import me.terevo.domain.model.*
 
 class RelationEditor(
     private val commandBus: CommandBus,
@@ -38,7 +26,10 @@ class RelationEditor(
         first: PersonId,
         second: PersonId,
         status: MarriageStatus = MarriageStatus.MARRIED,
-    ): RelationResult = executeRelation(Marriage.of(first = first, second = second, status = status))
+        since: EventDate = EventDate.Unknown,
+        place: Place? = null,
+    ): RelationResult =
+        executeRelation(Marriage.of(first = first, second = second, since = since, status = status, place = place))
 
     fun addParentWithPerson(parent: Person, child: PersonId, kind: ParentKind): RelationResult =
         executeCreatedPerson(parent, ParentChild.of(parent = parent.id, child = child, kind = kind))
@@ -50,7 +41,12 @@ class RelationEditor(
         spouse: Person,
         person: PersonId,
         status: MarriageStatus = MarriageStatus.MARRIED,
-    ): RelationResult = executeCreatedPerson(spouse, Marriage.of(first = person, second = spouse.id, status = status))
+        since: EventDate = EventDate.Unknown,
+        place: Place? = null,
+    ): RelationResult = executeCreatedPerson(
+        spouse,
+        Marriage.of(first = person, second = spouse.id, since = since, status = status, place = place),
+    )
 
     fun remove(id: RelationId): RelationResult = execute(RemoveRelation(id))
 
@@ -64,7 +60,10 @@ class RelationEditor(
         return execute(Batch(listOf(RemoveRelation(id), AddRelation(changed))))
     }
 
-    private fun executeCreatedPerson(person: Person, relation: Outcome<me.terevo.domain.model.Relation>): RelationResult =
+    private fun executeCreatedPerson(
+        person: Person,
+        relation: Outcome<me.terevo.domain.model.Relation>
+    ): RelationResult =
         when (relation) {
             is Outcome.Ok -> execute(Batch(listOf(AddPerson(person), AddRelation(relation.value))))
             is Outcome.Err -> RelationResult.Error(relation.error.toRelationMessage(commandBus.tree.value))
@@ -95,6 +94,7 @@ fun DomainError.toRelationMessage(tree: FamilyTree): String = when (this) {
         val names = path.map { tree.person(it)?.name?.display ?: it.toString() }
         "Эта связь создаст цикл (${names.joinToString(" → ")})"
     }
+
     is DomainError.Missing.Person -> "Человек не найден"
     is DomainError.Missing.Relation -> "Связь не найдена"
     else -> "Не удалось изменить связь"

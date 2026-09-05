@@ -19,14 +19,14 @@ fun LifeSpan.cardDates(): String {
     val birthDate = birth.displayText()
     val deathDate = death.displayText()
     return when {
-        birthDate == null && deathDate == null -> ""
-        deathDate == null -> "р. $birthDate"
-        birthDate == null -> "ум. $deathDate"
-        else -> "$birthDate — $deathDate"
+        birthDate != null && deathDate == null -> birthDate
+        birthDate == null && deathDate != null -> "ум. $deathDate"
+        birthDate != null && deathDate != null -> "$birthDate — $deathDate"
+        else -> ""
     }
 }
 
-private fun EventDate.displayText(): String? = when (this) {
+internal fun EventDate.displayText(): String? = when (this) {
     is EventDate.Exact -> date.toDisplayDate()
     is EventDate.Approximate -> "ок. ${around.toDisplayDate()}"
     is EventDate.Range -> "${from.toDisplayDate()}–${to.toDisplayDate()}"

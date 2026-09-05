@@ -1,22 +1,18 @@
 package me.terevo.app
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.KeyShortcut
-import androidx.compose.ui.input.key.isAltPressed
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.MenuBar
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
-import java.awt.Frame
+import me.terevo.domain.port.ThemeMode
 import me.terevo.persistence.SqliteProjectService
 import me.terevo.ui.App
 import me.terevo.ui.AppAction
@@ -24,6 +20,7 @@ import me.terevo.ui.Strings
 import me.terevo.ui.person.RelationMode
 import me.terevo.ui.theme.TerevoTheme
 import me.terevo.ui.tree.TreeCanvasIntent
+import java.awt.Frame
 
 fun main() = application {
     val windowState = rememberWindowState(size = DpSize(1280.dp, 800.dp))
@@ -40,7 +37,11 @@ fun main() = application {
             } else {
                 when {
                     event.key == Key.Escape -> {
-                        appState = controller.updateCanvas(TreeCanvasIntent.ClearSelection)
+                        appState = when {
+                            appState.dragRelationMenu != null -> controller.cancelDragRelationMenu()
+                            appState.canvas.nodeDrag != null -> controller.updateCanvas(TreeCanvasIntent.DragNodeCancel)
+                            else -> controller.updateCanvas(TreeCanvasIntent.ClearSelection)
+                        }
                         true
                     }
 
@@ -82,6 +83,9 @@ fun main() = application {
                 AppAction.NavigateForward -> appState = controller.navigateForward()
                 is AppAction.ChangeLayoutMode -> appState = controller.changeLayoutMode(action.mode)
                 is AppAction.ChangeLayoutDepth -> appState = controller.changeLayoutDepth(action.depth)
+                is AppAction.ChangeLayoutDirection -> appState = controller.changeLayoutDirection(action.direction)
+                is AppAction.ChangeLayoutDensity -> appState = controller.changeLayoutDensity(action.density)
+                AppAction.ResetPins -> appState = controller.resetPins()
                 is AppAction.ChangeSearchFilter -> appState = controller.changeSearchFilter(action.filter)
                 AppAction.AddPerson -> appState = controller.startAddingPerson()
                 AppAction.EditPerson -> appState = controller.startEditingPerson()
@@ -90,6 +94,12 @@ fun main() = application {
                 AppAction.AddChild -> appState = controller.startAddingRelation(RelationMode.CHILD)
                 AppAction.AddSpouse -> appState = controller.startAddingRelation(RelationMode.SPOUSE)
                 AppAction.ChooseMedia -> dialogs.chooseMedia()?.let { appState = controller.importMedia(it) }
+                is AppAction.DropMedia -> action.paths.forEach { appState = controller.importMedia(it) }
+                AppAction.ChoosePersonFormMedia ->
+                    dialogs.chooseMedia()?.let { appState = controller.addPendingPersonMedia(it) }
+
+                is AppAction.DropPersonFormMedia -> appState = controller.addPendingPersonMedia(action.paths)
+                is AppAction.RemovePendingPersonMedia -> appState = controller.removePendingPersonMedia(action.path)
                 is AppAction.OpenMedia -> appState = controller.openMedia(action.id)
                 is AppAction.RemoveMedia -> appState = controller.removeMedia(action.id)
                 is AppAction.ChangeMediaZoom -> appState = controller.changeMediaZoom(action.zoom)
@@ -105,11 +115,16 @@ fun main() = application {
                 AppAction.CreateRelative -> appState = controller.startCreatingRelative()
                 AppAction.SaveRelation -> appState = controller.saveRelation()
                 AppAction.CancelRelation -> appState = controller.cancelRelation()
+                is AppAction.ChooseDragRelationMode -> appState = controller.chooseDragRelationMode(action.mode)
+                AppAction.CancelDragRelationMenu -> appState = controller.cancelDragRelationMenu()
                 AppAction.OpenKinshipDialog -> appState = controller.startResolvingKinship()
                 is AppAction.UpdateKinshipDialog -> appState = controller.updateKinshipDialog(action.dialog)
                 AppAction.CloseKinshipDialog -> appState = controller.closeKinshipDialog()
                 AppAction.OpenStatistics -> appState = controller.openStatistics()
                 AppAction.CloseStatistics -> appState = controller.closeStatistics()
+                is AppAction.ChangeThemeMode -> appState = controller.changeThemeMode(action.mode)
+                is AppAction.ChangeMainTab -> appState = controller.changeMainTab(action.tab)
+                AppAction.ToggleSidebar -> appState = controller.toggleSidebar()
             }
         }
         MenuBar {
@@ -154,6 +169,7 @@ fun main() = application {
             Menu(Strings.VIEW) {
                 Item(
                     Strings.FIT_TO_SCREEN,
+                    shortcut = KeyShortcut(Key.Zero, meta = true),
                     enabled = appState.isProjectOpen,
                     onClick = { onAction(AppAction.FitToScreen) })
                 Item(
@@ -168,9 +184,28 @@ fun main() = application {
                     Strings.STATISTICS,
                     enabled = appState.isProjectOpen,
                     onClick = { onAction(AppAction.OpenStatistics) })
+                Menu(Strings.THEME) {
+                    RadioButtonItem(
+                        Strings.THEME_LIGHT,
+                        selected = appState.themeMode == ThemeMode.LIGHT,
+                        onClick = { onAction(AppAction.ChangeThemeMode(ThemeMode.LIGHT)) })
+                    RadioButtonItem(
+                        Strings.THEME_DARK,
+                        selected = appState.themeMode == ThemeMode.DARK,
+                        onClick = { onAction(AppAction.ChangeThemeMode(ThemeMode.DARK)) })
+                    RadioButtonItem(
+                        Strings.THEME_SYSTEM,
+                        selected = appState.themeMode == ThemeMode.SYSTEM,
+                        onClick = { onAction(AppAction.ChangeThemeMode(ThemeMode.SYSTEM)) })
+                }
             }
         }
-        TerevoTheme {
+        val isDark = when (appState.themeMode) {
+            ThemeMode.LIGHT -> false
+            ThemeMode.DARK -> true
+            ThemeMode.SYSTEM -> isSystemInDarkTheme()
+        }
+        TerevoTheme(darkTheme = isDark) {
             App(state = appState, onAction = onAction)
         }
     }

@@ -19,6 +19,10 @@ CREATE TABLE person (
     death_place TEXT,
     death_latitude REAL,
     death_longitude REAL,
+    residence TEXT,
+    residence_latitude REAL,
+    residence_longitude REAL,
+    occupation TEXT NOT NULL DEFAULT '',
     notes TEXT NOT NULL
 );
 
@@ -54,6 +58,10 @@ INSERT INTO person(
     death_place,
     death_latitude,
     death_longitude,
+    residence,
+    residence_latitude,
+    residence_longitude,
+    occupation,
     notes
 )
 VALUES (
@@ -77,6 +85,10 @@ VALUES (
     :death_place,
     :death_latitude,
     :death_longitude,
+    :residence,
+    :residence_latitude,
+    :residence_longitude,
+    :occupation,
     :notes
 );
 
@@ -101,6 +113,10 @@ SET surname = :surname,
     death_place = :death_place,
     death_latitude = :death_latitude,
     death_longitude = :death_longitude,
+    residence = :residence,
+    residence_latitude = :residence_latitude,
+    residence_longitude = :residence_longitude,
+    occupation = :occupation,
     notes = :notes
 WHERE id = :id;
 

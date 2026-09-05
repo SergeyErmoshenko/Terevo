@@ -1,23 +1,18 @@
 package me.terevo.ui.person
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Text
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import me.terevo.domain.model.MarriageStatus
-import me.terevo.domain.model.ParentKind
-import me.terevo.domain.model.Person
-import me.terevo.domain.model.PersonId
+import me.terevo.domain.Outcome
+import me.terevo.domain.flatMap
+import me.terevo.domain.model.*
 import me.terevo.ui.Strings
+import me.terevo.ui.components.SelectableOption
 import me.terevo.ui.theme.TerevoTheme
 
 enum class RelationMode {
@@ -34,6 +29,8 @@ data class RelationDialogState(
     val selected: PersonId? = null,
     val parentKind: ParentKind = ParentKind.BIOLOGICAL,
     val marriageStatus: MarriageStatus = MarriageStatus.MARRIED,
+    val marriageSince: EventDateInput = EventDateInput(),
+    val marriagePlace: String = "",
     val error: String? = null,
 ) {
     val filteredPeople: List<Person>
@@ -42,6 +39,10 @@ data class RelationDialogState(
             return people.filter { normalized.isEmpty() || normalized in it.name.display.lowercase() }
         }
 }
+
+internal fun RelationDialogState.marriageDetails(): Outcome<Pair<EventDate, Place?>> =
+    marriageSince.toEventDate()
+        .flatMap { since -> placeOf(marriagePlace).flatMap { place -> Outcome.Ok(since to place) } }
 
 @Composable
 fun RelationDialog(
@@ -56,7 +57,10 @@ fun RelationDialog(
         onDismissRequest = onCancel,
         title = { Text(state.mode.title) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(spacing.small)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(spacing.small),
+            ) {
                 Text(state.source.name.display)
                 Button(onClick = onCreatePerson, modifier = Modifier.fillMaxWidth()) {
                     Text(Strings.CREATE_NEW_PERSON)
@@ -70,16 +74,8 @@ fun RelationDialog(
                     singleLine = true,
                 )
                 state.filteredPeople.forEach { person ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth().clickable {
-                            onChange(state.copy(selected = person.id, error = null))
-                        },
-                    ) {
-                        RadioButton(
-                            selected = state.selected == person.id,
-                            onClick = { onChange(state.copy(selected = person.id, error = null)) },
-                        )
-                        Text(person.name.display)
+                    SelectableOption(state.selected == person.id, person.name.display) {
+                        onChange(state.copy(selected = person.id, error = null))
                     }
                 }
                 if (state.mode == RelationMode.PARENT || state.mode == RelationMode.CHILD) {
@@ -90,6 +86,18 @@ fun RelationDialog(
                     EnumOptions(MarriageStatus.entries, state.marriageStatus, MarriageStatus::label) {
                         onChange(state.copy(marriageStatus = it, error = null))
                     }
+                    EventDateFields(
+                        label = Strings.MARRIAGE_DATE,
+                        input = state.marriageSince,
+                        error = null,
+                    ) { onChange(state.copy(marriageSince = it, error = null)) }
+                    OutlinedTextField(
+                        value = state.marriagePlace,
+                        onValueChange = { onChange(state.copy(marriagePlace = it, error = null)) },
+                        label = { Text(Strings.MARRIAGE_PLACE) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
                 }
                 state.error?.let { Text(it) }
             }
@@ -106,10 +114,7 @@ fun RelationDialog(
 @Composable
 private fun <T> EnumOptions(values: List<T>, selected: T, label: (T) -> String, onSelect: (T) -> Unit) {
     values.forEach { value ->
-        Row(modifier = Modifier.fillMaxWidth().clickable { onSelect(value) }) {
-            RadioButton(selected = selected == value, onClick = { onSelect(value) })
-            Text(label(value))
-        }
+        SelectableOption(selected == value, label(value)) { onSelect(value) }
     }
 }
 

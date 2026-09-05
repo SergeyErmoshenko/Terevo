@@ -1,15 +1,11 @@
 package me.terevo.domain.model
 
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 import kotlinx.datetime.LocalDate
 import me.terevo.domain.DomainError
 import me.terevo.testing.shouldBeErr
 import me.terevo.testing.shouldBeOk
 import me.terevo.testing.year
+import kotlin.test.*
 
 class RelationTest {
 
@@ -135,5 +131,19 @@ class RelationTest {
 
         assertEquals(MarriageStatus.DIVORCED, marriage.status)
         assertEquals(EventDate.Exact(LocalDate(1930, 6, 2)), marriage.until)
+    }
+
+    @Test
+    fun `marriage keeps its place and with replaces it`() {
+        val place = Place.of("Москва").shouldBeOk()
+
+        val marriage = Marriage.of(first = PersonId.next(), second = PersonId.next(), place = place).shouldBeOk()
+
+        assertEquals(place, marriage.place)
+
+        val otherPlace = Place.of("Санкт-Петербург").shouldBeOk()
+        val updated = marriage.with(place = otherPlace).shouldBeOk()
+
+        assertEquals(otherPlace, updated.place)
     }
 }

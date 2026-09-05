@@ -3,22 +3,26 @@ package me.terevo.ui.statistics
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import me.terevo.ui.Strings
 import me.terevo.ui.theme.TerevoTheme
 
 @Composable
 fun BarChart(entries: List<Pair<String, Int>>, modifier: Modifier = Modifier) {
-    if (entries.isEmpty()) return
     val colors = TerevoTheme.colors
+    if (entries.isEmpty()) {
+        Text(Strings.NO_DATA, color = colors.textSecondary, modifier = modifier)
+        return
+    }
     val textMeasurer = rememberTextMeasurer()
     val maxCount = entries.maxOf { it.second }.coerceAtLeast(1)
     val rowHeight = ROW_HEIGHT_DP.dp
@@ -34,7 +38,8 @@ fun BarChart(entries: List<Pair<String, Int>>, modifier: Modifier = Modifier) {
             val barTop = top + (rowHeightPx - barHeight) / 2f
             val barWidth = (count.toFloat() / maxCount) * barAreaWidth
 
-            val labelLayout = textMeasurer.measure(label, TextStyle(color = Color.Black, fontSize = LABEL_SIZE.sp))
+            val labelLayout =
+                textMeasurer.measure(label, TextStyle(color = colors.textPrimary, fontSize = LABEL_SIZE.sp))
             drawText(
                 labelLayout,
                 topLeft = Offset(0f, top + (rowHeightPx - labelLayout.size.height) / 2f),
@@ -45,7 +50,10 @@ fun BarChart(entries: List<Pair<String, Int>>, modifier: Modifier = Modifier) {
                 size = Size(barWidth.coerceAtLeast(1f), barHeight),
             )
             val countLayout =
-                textMeasurer.measure(count.toString(), TextStyle(color = Color.Black, fontSize = LABEL_SIZE.sp))
+                textMeasurer.measure(
+                    count.toString(),
+                    TextStyle(color = colors.textSecondary, fontSize = LABEL_SIZE.sp)
+                )
             drawText(
                 countLayout,
                 topLeft = Offset(

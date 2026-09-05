@@ -27,7 +27,7 @@ data class ExportTree(
 
 object ExportTreeMapper {
     private val engine = CachedLayoutEngine()
-    private val cardSize = Size(width = 200.0, height = 72.0)
+    private val cardSize = Size(width = 240.0, height = 72.0)
 
     fun map(tree: FamilyTree, options: LayoutOptions = LayoutOptions()): ExportTree {
         val nodes = tree.persons.values.map { person -> LayoutNode(person.id.toNodeId(), person.name.sortKey) }

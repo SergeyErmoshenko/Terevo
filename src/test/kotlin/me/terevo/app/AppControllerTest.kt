@@ -1,15 +1,5 @@
 package me.terevo.app
 
-import java.nio.file.Files
-import java.nio.file.Path
-import kotlin.io.path.createTempDirectory
-import kotlin.test.AfterTest
-import kotlin.test.BeforeTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
 import me.terevo.domain.model.EventDate
 import me.terevo.domain.model.Marriage
 import me.terevo.domain.model.ParentChild
@@ -17,12 +7,12 @@ import me.terevo.domain.port.ProjectLocation
 import me.terevo.layout.LayoutMode
 import me.terevo.persistence.SqliteProjectService
 import me.terevo.ui.Strings
-import me.terevo.ui.person.CustomFieldInput
-import me.terevo.ui.person.EventDateInput
-import me.terevo.ui.person.EventDateMode
-import me.terevo.ui.person.PersonSearchFilter
-import me.terevo.ui.person.RelationMode
+import me.terevo.ui.person.*
 import me.terevo.ui.tree.NodeAccent
+import java.nio.file.Files
+import java.nio.file.Path
+import kotlin.io.path.createTempDirectory
+import kotlin.test.*
 
 class AppControllerTest {
     private lateinit var workspace: Path
@@ -106,7 +96,7 @@ class AppControllerTest {
 
         assertEquals(1, saved.personCount)
         assertEquals(1, saved.canvas.layout.nodes.size)
-        assertEquals("Иванов Иван", saved.canvas.visuals.persons.values.single().name)
+        assertEquals("Иванов Иван", saved.canvas.visuals.persons.values.single().nameLines.joinToString(" "))
         assertEquals(null, saved.personForm)
         controller.close()
         controller = AppController(SqliteProjectService(timestamp = { "2026-08-30T12:00:00Z" }))
@@ -167,7 +157,8 @@ class AppControllerTest {
 
         val attached = controller.importMedia(source.toString())
         val media = assertNotNull(attached.selectedMedia.singleOrNull())
-        val content = projectDirectory.resolve(ProjectLocation.MEDIA_DIRECTORY).resolve(media.sha256.take(2)).resolve(media.sha256)
+        val content = projectDirectory.resolve(ProjectLocation.MEDIA_DIRECTORY).resolve(media.sha256.take(2))
+            .resolve(media.sha256)
 
         assertTrue(Files.exists(content))
         assertEquals(media.id, attached.selectedPerson?.mediaIds?.singleOrNull())
@@ -185,6 +176,46 @@ class AppControllerTest {
     }
 
     @Test
+    fun `pending person media can be added and removed before saving`() {
+        controller.create(locationOf("pending-media-form"))
+        val form = assertNotNull(controller.startAddingPerson().personForm)
+        controller.updatePersonForm(form.copy(surname = "Иванов"))
+
+        val withOne = controller.addPendingPersonMedia("/tmp/a.txt")
+        assertEquals(listOf("/tmp/a.txt"), withOne.personForm?.pendingMediaPaths)
+
+        val withThree = controller.addPendingPersonMedia(listOf("/tmp/b.txt", "/tmp/c.txt"))
+        assertEquals(listOf("/tmp/a.txt", "/tmp/b.txt", "/tmp/c.txt"), withThree.personForm?.pendingMediaPaths)
+
+        val withoutB = controller.removePendingPersonMedia("/tmp/b.txt")
+        assertEquals(listOf("/tmp/a.txt", "/tmp/c.txt"), withoutB.personForm?.pendingMediaPaths)
+    }
+
+    @Test
+    fun `person created with pending media attaches files after save`() {
+        val projectDirectory = workspace.resolve("pending-media-project")
+        val location = ProjectLocation(projectDirectory.resolve(ProjectLocation.DEFAULT_FILE_NAME).toString())
+        controller.create(location)
+        val first = workspace.resolve("first.txt")
+        val second = workspace.resolve("second.txt")
+        Files.writeString(first, "one")
+        Files.writeString(second, "two")
+        val form = assertNotNull(controller.startAddingPerson().personForm)
+        controller.updatePersonForm(
+            form.copy(
+                surname = "Иванов",
+                givenName = "Иван",
+                pendingMediaPaths = listOf(first.toString(), second.toString()),
+            ),
+        )
+
+        val saved = controller.savePerson()
+
+        assertEquals(2, saved.selectedMedia.size)
+        assertEquals(2, saved.selectedPerson?.mediaIds?.size)
+    }
+
+    @Test
     fun `deleting person removes media that is no longer referenced`() {
         val projectDirectory = workspace.resolve("delete-media-project")
         val location = ProjectLocation(projectDirectory.resolve(ProjectLocation.DEFAULT_FILE_NAME).toString())
@@ -195,7 +226,8 @@ class AppControllerTest {
         Files.writeString(source, "document")
         val attached = controller.importMedia(source.toString())
         val media = assertNotNull(attached.selectedMedia.singleOrNull())
-        val content = projectDirectory.resolve(ProjectLocation.MEDIA_DIRECTORY).resolve(media.sha256.take(2)).resolve(media.sha256)
+        val content = projectDirectory.resolve(ProjectLocation.MEDIA_DIRECTORY).resolve(media.sha256.take(2))
+            .resolve(media.sha256)
 
         controller.deleteSelectedPerson()
 
@@ -284,10 +316,10 @@ class AppControllerTest {
 
         val state = controller.selectPerson(child)
         val highlight = state.canvas.highlight
-        val childNode = state.canvas.visuals.persons.values.single { it.name == "Иванов Иван" }.id
-        val parentNode = state.canvas.visuals.persons.values.single { it.name == "Иванова Мария" }.id
-        val spouseNode = state.canvas.visuals.persons.values.single { it.name == "Иванова Анна" }.id
-        val unrelatedNode = state.canvas.visuals.persons.values.single { it.name == "Петров Пётр" }.id
+        val childNode = state.canvas.visuals.persons.values.single { it.nameLines.joinToString(" ") == "Иванов Иван" }.id
+        val parentNode = state.canvas.visuals.persons.values.single { it.nameLines.joinToString(" ") == "Иванова Мария" }.id
+        val spouseNode = state.canvas.visuals.persons.values.single { it.nameLines.joinToString(" ") == "Иванова Анна" }.id
+        val unrelatedNode = state.canvas.visuals.persons.values.single { it.nameLines.joinToString(" ") == "Петров Пётр" }.id
 
         assertEquals(NodeAccent.FOCUSED, highlight.accentOf(childNode))
         assertEquals(Strings.MAIN_PERSON, highlight.roleOf(childNode))
@@ -316,8 +348,14 @@ class AppControllerTest {
         val ancestors = controller.changeLayoutMode(LayoutMode.ANCESTORS)
         val descendants = controller.changeLayoutMode(LayoutMode.DESCENDANTS)
 
-        assertEquals(setOf(parent, grandparent), ancestors.canvas.layout.nodes.keys.map { me.terevo.domain.model.PersonId.parse(it.value) }.toSet())
-        assertEquals(setOf(parent, child), descendants.canvas.layout.nodes.keys.map { me.terevo.domain.model.PersonId.parse(it.value) }.toSet())
+        assertEquals(
+            setOf(parent, grandparent),
+            ancestors.canvas.layout.nodes.keys.map { me.terevo.domain.model.PersonId.parse(it.value) }.toSet()
+        )
+        assertEquals(
+            setOf(parent, child),
+            descendants.canvas.layout.nodes.keys.map { me.terevo.domain.model.PersonId.parse(it.value) }.toSet()
+        )
     }
 
     @Test
@@ -332,7 +370,10 @@ class AppControllerTest {
         val secondNode = me.terevo.layout.NodeId(second.value.toString())
         val secondRect = assertNotNull(secondState.canvas.layout.rectOf(secondNode))
 
-        assertEquals(secondState.canvas.camera.center(secondRect, secondState.canvas.viewport), secondState.canvas.camera)
+        assertEquals(
+            secondState.canvas.camera.center(secondRect, secondState.canvas.viewport),
+            secondState.canvas.camera
+        )
         assertEquals(first, controller.navigateBack().selectedPerson?.id)
         assertEquals(second, controller.navigateForward().selectedPerson?.id)
     }

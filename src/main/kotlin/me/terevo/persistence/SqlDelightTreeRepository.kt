@@ -1,17 +1,12 @@
 package me.terevo.persistence
 
-import java.sql.SQLException
 import me.terevo.domain.DomainError
 import me.terevo.domain.Outcome
 import me.terevo.domain.invariant.Change
-import me.terevo.domain.model.FamilyTree
-import me.terevo.domain.model.Marriage
-import me.terevo.domain.model.MediaId
-import me.terevo.domain.model.ParentChild
-import me.terevo.domain.model.Person
-import me.terevo.domain.model.Relation
+import me.terevo.domain.model.*
 import me.terevo.domain.port.TreeRepository
 import me.terevo.persistence.db.TerevoDatabase
+import java.sql.SQLException
 
 class SqlDelightTreeRepository(private val database: TerevoDatabase) : TreeRepository {
 
@@ -91,6 +86,10 @@ class SqlDelightTreeRepository(private val database: TerevoDatabase) : TreeRepos
             death_place = columns.deathPlace,
             death_latitude = columns.deathLatitude,
             death_longitude = columns.deathLongitude,
+            residence = columns.residence,
+            residence_latitude = columns.residenceLatitude,
+            residence_longitude = columns.residenceLongitude,
+            occupation = columns.occupation,
             notes = columns.notes,
         )
         writeSatellites(person, columns.id)
@@ -118,6 +117,10 @@ class SqlDelightTreeRepository(private val database: TerevoDatabase) : TreeRepos
             death_place = columns.deathPlace,
             death_latitude = columns.deathLatitude,
             death_longitude = columns.deathLongitude,
+            residence = columns.residence,
+            residence_latitude = columns.residenceLatitude,
+            residence_longitude = columns.residenceLongitude,
+            occupation = columns.occupation,
             notes = columns.notes,
             id = columns.id,
         )
@@ -170,6 +173,9 @@ class SqlDelightTreeRepository(private val database: TerevoDatabase) : TreeRepos
                     until_end = columns.until.end,
                     until_precision = columns.until.precision,
                     status = columns.status,
+                    place = columns.place,
+                    place_latitude = columns.placeLatitude,
+                    place_longitude = columns.placeLongitude,
                 )
             }
         }

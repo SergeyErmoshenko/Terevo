@@ -11,6 +11,9 @@ CREATE TABLE marriage (
     until_end TEXT,
     until_precision TEXT,
     status TEXT NOT NULL,
+    place TEXT,
+    place_latitude REAL,
+    place_longitude REAL,
     FOREIGN KEY (spouse_a) REFERENCES person(id) ON DELETE CASCADE,
     FOREIGN KEY (spouse_b) REFERENCES person(id) ON DELETE CASCADE
 );
@@ -40,7 +43,10 @@ INSERT INTO marriage(
     until_value,
     until_end,
     until_precision,
-    status
+    status,
+    place,
+    place_latitude,
+    place_longitude
 )
 VALUES (
     :id,
@@ -54,7 +60,10 @@ VALUES (
     :until_value,
     :until_end,
     :until_precision,
-    :status
+    :status,
+    :place,
+    :place_latitude,
+    :place_longitude
 );
 
 delete:

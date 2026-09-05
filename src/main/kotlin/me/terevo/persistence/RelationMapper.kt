@@ -2,12 +2,8 @@ package me.terevo.persistence
 
 import me.terevo.domain.DomainError
 import me.terevo.domain.Outcome
-import me.terevo.domain.model.Marriage
-import me.terevo.domain.model.MarriageStatus
-import me.terevo.domain.model.ParentChild
-import me.terevo.domain.model.ParentKind
-import me.terevo.domain.model.PersonId
-import me.terevo.domain.model.RelationId
+import me.terevo.domain.getOrNull
+import me.terevo.domain.model.*
 import me.terevo.persistence.db.Marriage as MarriageRow
 import me.terevo.persistence.db.Parent_child as ParentChildRow
 
@@ -25,6 +21,9 @@ data class MarriageColumns(
     val since: EncodedDate,
     val until: EncodedDate,
     val status: String,
+    val place: String?,
+    val placeLatitude: Double?,
+    val placeLongitude: Double?,
 )
 
 object RelationMapper {
@@ -43,6 +42,9 @@ object RelationMapper {
         since = EventDateCodec.encode(relation.since),
         until = EventDateCodec.encode(relation.until),
         status = relation.status.name,
+        place = relation.place?.title,
+        placeLatitude = relation.place?.coordinates?.latitude,
+        placeLongitude = relation.place?.coordinates?.longitude,
     )
 
     fun toDomain(row: ParentChildRow): Outcome<ParentChild> {
@@ -66,7 +68,14 @@ object RelationMapper {
         ) ?: return corrupted("marriage", row.id, "end date is unreadable")
         val status = MarriageStatus.entries.firstOrNull { it.name == row.status }
             ?: return corrupted("marriage", row.id, "unknown status ${row.status}")
-        return Marriage.of(RelationId(id), PersonId(first), PersonId(second), since, until, status)
+        val place = place(row.place, row.place_latitude, row.place_longitude)
+        return Marriage.of(RelationId(id), PersonId(first), PersonId(second), since, until, status, place)
+    }
+
+    private fun place(title: String?, latitude: Double?, longitude: Double?): Place? {
+        if (title == null) return null
+        val coordinates = if (latitude != null && longitude != null) Coordinates(latitude, longitude) else null
+        return Place.of(title, coordinates).getOrNull()
     }
 
     private fun corrupted(table: String, id: String, reason: String): Outcome<Nothing> =

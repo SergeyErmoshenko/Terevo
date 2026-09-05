@@ -1,59 +1,43 @@
 package me.terevo.app
 
-import java.nio.file.Files
-import java.nio.file.Path
-import javax.imageio.ImageIO
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.todayIn
 import me.terevo.domain.DomainError
 import me.terevo.domain.Outcome
 import me.terevo.domain.command.CommandBus
 import me.terevo.domain.command.UpdatePerson
-import me.terevo.domain.model.FamilyTree
-import me.terevo.domain.model.Marriage
-import me.terevo.domain.model.MediaId
-import me.terevo.domain.model.ParentChild
-import me.terevo.domain.model.PersonId
-import me.terevo.domain.port.OpenProject
-import me.terevo.domain.port.ProjectLocation
-import me.terevo.domain.port.ProjectService
+import me.terevo.domain.model.*
+import me.terevo.domain.port.*
 import me.terevo.export.PdfFiles
 import me.terevo.gedcom.GedcomFiles
 import me.terevo.kinship.KinshipCalculator
 import me.terevo.kinship.KinshipResult
+import me.terevo.layout.LayoutDirection
 import me.terevo.layout.LayoutMode
 import me.terevo.layout.LayoutOptions
+import me.terevo.layout.Point
+import me.terevo.persistence.JsonSettingsStore
 import me.terevo.statistics.TreeStatistics
-import me.terevo.ui.AppState
-import me.terevo.ui.GedcomImportState
-import me.terevo.ui.MediaViewerState
+import me.terevo.ui.*
 import me.terevo.ui.export.exportTreePng
 import me.terevo.ui.kinship.KinshipDialogState
-import me.terevo.ui.person.KinshipRoles
-import me.terevo.ui.person.PersonFormService
-import me.terevo.ui.person.PersonFormState
-import me.terevo.ui.person.PersonSearch
-import me.terevo.ui.person.PersonSearchFilter
-import me.terevo.ui.person.RelatedPerson
-import me.terevo.ui.person.RelationDialogState
-import me.terevo.ui.person.RelationEditor
-import me.terevo.ui.person.RelationMode
-import me.terevo.ui.person.RelationResult
-import me.terevo.ui.person.toPerson
-import me.terevo.ui.person.toRussianMessage as warningToRussianMessage
-import me.terevo.ui.person.validatePersonForm
+import me.terevo.ui.person.*
 import me.terevo.ui.theme.LightColors
-import me.terevo.ui.tree.HistoryController
-import me.terevo.ui.tree.TreeCanvasIntent
-import me.terevo.ui.tree.TreeCanvasMapper
-import me.terevo.ui.tree.TreeCanvasState
-import me.terevo.ui.tree.TreeHighlight
-import me.terevo.ui.tree.reduceTreeCanvas
+import me.terevo.ui.tree.*
+import java.nio.file.Files
+import java.nio.file.Path
+import javax.imageio.ImageIO
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
+import me.terevo.ui.person.toRussianMessage as warningToRussianMessage
 
 class AppController(
     private val projects: ProjectService,
+    private val settings: SettingsStore = JsonSettingsStore(ProjectDirectories().root),
 ) : AutoCloseable {
     private var project: OpenProject? = null
 
-    var state: AppState = AppState()
+    var state: AppState = AppState(themeMode = loadThemeMode())
         private set
 
     var commandBus: CommandBus? = null
@@ -127,6 +111,30 @@ class AppController(
 
     fun changeLayoutDepth(depth: Int): AppState {
         state = state.copy(layoutDepth = depth.coerceIn(1, Int.MAX_VALUE))
+        return refreshTree()
+    }
+
+    fun changeLayoutDirection(direction: LayoutDirection): AppState {
+        state = state.copy(layoutDirection = direction)
+        return refreshTree()
+    }
+
+    fun changeLayoutDensity(density: LayoutDensity): AppState {
+        state = state.copy(layoutDensity = density)
+        return refreshTree()
+    }
+
+    fun pinNode(id: PersonId, point: Point): AppState {
+        val opened = project ?: return state
+        opened.nodePositionRepository.set(id, point.x, point.y)
+        state = state.copy(pinnedPositions = state.pinnedPositions + (id to point))
+        return refreshTree()
+    }
+
+    fun resetPins(): AppState {
+        val opened = project ?: return state
+        opened.nodePositionRepository.clearAll()
+        state = state.copy(pinnedPositions = emptyMap())
         return refreshTree()
     }
 
@@ -209,6 +217,24 @@ class AppController(
                 state.copy(status = "Не удалось добавить файл")
             }
         }
+        return state
+    }
+
+    fun addPendingPersonMedia(path: String): AppState {
+        val form = state.personForm ?: return state
+        state = state.copy(personForm = form.copy(pendingMediaPaths = form.pendingMediaPaths + path))
+        return state
+    }
+
+    fun addPendingPersonMedia(paths: List<String>): AppState {
+        val form = state.personForm ?: return state
+        state = state.copy(personForm = form.copy(pendingMediaPaths = form.pendingMediaPaths + paths))
+        return state
+    }
+
+    fun removePendingPersonMedia(path: String): AppState {
+        val form = state.personForm ?: return state
+        state = state.copy(personForm = form.copy(pendingMediaPaths = form.pendingMediaPaths.filterNot { it == path }))
         return state
     }
 
@@ -298,7 +324,17 @@ class AppController(
         val result = when (dialog.mode) {
             RelationMode.PARENT -> editor.addParent(target, dialog.source.id, dialog.parentKind)
             RelationMode.CHILD -> editor.addChild(dialog.source.id, target, dialog.parentKind)
-            RelationMode.SPOUSE -> editor.addSpouse(dialog.source.id, target, dialog.marriageStatus)
+            RelationMode.SPOUSE -> when (val details = dialog.marriageDetails()) {
+                is Outcome.Ok -> editor.addSpouse(
+                    dialog.source.id,
+                    target,
+                    dialog.marriageStatus,
+                    details.value.first,
+                    details.value.second,
+                )
+
+                is Outcome.Err -> RelationResult.Error(details.error.toRussianMessage())
+            }
         }
         state = when (result) {
             is RelationResult.Success -> remapTree(commandBus?.tree?.value ?: return state, dialog.source.id).copy(
@@ -313,6 +349,37 @@ class AppController(
 
     fun cancelRelation(): AppState {
         state = state.copy(relationDialog = null)
+        return state
+    }
+
+    private fun startRelationFromDrag(source: PersonId, target: PersonId, screenPosition: Point): AppState {
+        val tree = commandBus?.tree?.value ?: return state
+        val validity = RelationMode.entries.associateWith { mode -> canCreateRelation(tree, mode, source, target) }
+        state = state.copy(
+            canvas = state.canvas.copy(nodeDrag = null),
+            dragRelationMenu = DragRelationMenuState(source, target, screenPosition, validity),
+        )
+        return state
+    }
+
+    fun chooseDragRelationMode(mode: RelationMode): AppState {
+        val menu = state.dragRelationMenu ?: return state
+        val tree = commandBus?.tree?.value ?: return state
+        val source = tree.person(menu.source) ?: return state
+        state = state.copy(
+            relationDialog = RelationDialogState(
+                mode = mode,
+                source = source,
+                people = tree.persons.values.filter { it.id != source.id }.sortedBy { it.name.sortKey },
+                selected = menu.target,
+            ),
+            dragRelationMenu = null,
+        )
+        return state
+    }
+
+    fun cancelDragRelationMenu(): AppState {
+        state = state.copy(dragRelationMenu = null)
         return state
     }
 
@@ -352,6 +419,22 @@ class AppController(
         return state
     }
 
+    fun changeMainTab(tab: MainTab): AppState {
+        state = state.copy(mainTab = tab)
+        return state
+    }
+
+    fun toggleSidebar(): AppState {
+        state = state.copy(sidebarCollapsed = !state.sidebarCollapsed)
+        return state
+    }
+
+    fun changeThemeMode(mode: ThemeMode): AppState {
+        settings.save((settings.load() as? Outcome.Ok)?.value?.copy(themeMode = mode) ?: UserSettings(themeMode = mode))
+        state = state.copy(themeMode = mode)
+        return state
+    }
+
     fun exportPng(path: String): AppState {
         val canvas = state.canvas
         state = when (
@@ -386,6 +469,7 @@ class AppController(
         state = if (pending == null) {
             when (val result = PersonFormService(bus).save(form)) {
                 is Outcome.Ok -> {
+                    if (form.pendingMediaPaths.isNotEmpty()) attachPendingMedia(form.id, form.pendingMediaPaths, bus)
                     val warnings = result.value.map { it.warningToRussianMessage() }
                     remapTree(bus.tree.value, selected = form.id).copy(
                         personForm = null,
@@ -421,6 +505,24 @@ class AppController(
                 val selected = canvas.spatialIndex.hitTest(canvas.camera.screenToWorld(intent.position))?.toPersonId()
                 remapSelection(commandBus?.tree?.value ?: return state, selected).also { state = it }
                 startEditingPerson()
+            }
+
+            TreeCanvasIntent.DragNodeEnd -> {
+                val drag = state.canvas.nodeDrag
+                val target = drag?.hoverTarget
+                when {
+                    drag == null -> state.copy(canvas = canvas)
+                    target == null -> {
+                        val rect = drag.currentRect
+                        pinNode(drag.nodeId.toPersonId(), Point(rect.left, rect.top))
+                    }
+
+                    else -> startRelationFromDrag(
+                        drag.nodeId.toPersonId(),
+                        target.toPersonId(),
+                        state.canvas.camera.worldToScreen(drag.currentWorld),
+                    )
+                }
             }
 
             else -> state.copy(canvas = canvas)
@@ -473,32 +575,76 @@ class AppController(
                 relation.parentKind
             )
 
-            RelationMode.SPOUSE -> RelationEditor(bus).addSpouseWithPerson(
-                person,
-                relation.source.id,
-                relation.marriageStatus
-            )
+            RelationMode.SPOUSE -> when (val details = relation.marriageDetails()) {
+                is Outcome.Ok -> RelationEditor(bus).addSpouseWithPerson(
+                    person,
+                    relation.source.id,
+                    relation.marriageStatus,
+                    details.value.first,
+                    details.value.second,
+                )
+
+                is Outcome.Err -> return state.copy(personForm = form.copy(blockingError = details.error.toRussianMessage()))
+            }
         }
         return when (result) {
-            is RelationResult.Success -> remapTree(bus.tree.value, relation.source.id).copy(
-                personForm = null,
-                pendingRelation = null,
-                status = result.warnings.firstOrNull()?.warningToRussianMessage() ?: "Человек и связь сохранены",
-            )
+            is RelationResult.Success -> {
+                if (form.pendingMediaPaths.isNotEmpty()) attachPendingMedia(form.id, form.pendingMediaPaths, bus)
+                remapTree(bus.tree.value, relation.source.id).copy(
+                    personForm = null,
+                    pendingRelation = null,
+                    status = result.warnings.firstOrNull()?.warningToRussianMessage() ?: "Человек и связь сохранены",
+                )
+            }
 
             is RelationResult.Error -> state.copy(personForm = form.copy(blockingError = result.message))
         }
     }
 
+    private fun attachPendingMedia(personId: PersonId, paths: List<String>, bus: CommandBus): AppState {
+        val opened = project ?: return state
+        val person = bus.tree.value.person(personId) ?: return state
+        val importedIds = paths.mapNotNull { path ->
+            when (val imported = opened.mediaRepository.import(path)) {
+                is Outcome.Ok -> imported.value.id
+                is Outcome.Err -> null
+            }
+        }
+        if (importedIds.isEmpty()) return state
+        val updated = when (val value = person.with(mediaIds = person.mediaIds + importedIds)) {
+            is Outcome.Ok -> value.value
+            is Outcome.Err -> return state
+        }
+        state = when (bus.execute(UpdatePerson(updated))) {
+            is Outcome.Ok -> state
+            is Outcome.Err -> {
+                importedIds.forEach(opened.mediaRepository::deleteIfUnused)
+                state
+            }
+        }
+        return state
+    }
+
     private fun mappedCanvas(tree: FamilyTree): TreeCanvasState {
         val root = state.selectedPerson?.id?.takeIf { tree.person(it) != null }?.toNodeId()
         val mode = if (root == null) LayoutMode.WHOLE_FAMILY else state.layoutMode
+        val density = state.layoutDensity
         val options = LayoutOptions(
             root = root,
             mode = mode,
             depth = state.layoutDepth,
+            siblingSpacing = density.siblingSpacing,
+            subtreeSpacing = density.subtreeSpacing,
+            generationSpacing = density.generationSpacing,
+            spouseSpacing = density.spouseSpacing,
+            direction = state.layoutDirection,
         )
-        val mapped = TreeCanvasMapper.map(tree, options).copy(viewport = state.canvas.viewport)
+        val mediaRepository = project?.mediaRepository ?: me.terevo.domain.port.MediaRepository.NONE
+        val pinned = state.pinnedPositions.mapNotNull { (id, point) ->
+            tree.person(id)?.let { id.toNodeId() to point }
+        }.toMap()
+        val mapped =
+            TreeCanvasMapper.map(tree, options, mediaRepository, pinned).copy(viewport = state.canvas.viewport)
         return if (mapped.viewport.width > 0.0 && mapped.viewport.height > 0.0 && mapped.layout.nodes.isNotEmpty()) {
             reduceTreeCanvas(mapped, TreeCanvasIntent.FitToScreen)
         } else {
@@ -506,9 +652,18 @@ class AppController(
         }
     }
 
+    @OptIn(ExperimentalTime::class)
     private fun remapTree(tree: FamilyTree, selected: PersonId?): AppState {
         val results = if (state.searchFilter.isEmpty()) emptyList() else PersonSearch.find(tree, state.searchFilter)
-        val source = state.copy(personCount = tree.size, canvas = mappedCanvas(tree), searchResults = results)
+        val mediaRepository = project?.mediaRepository ?: MediaRepository.NONE
+        val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
+        val source = state.copy(
+            personCount = tree.size,
+            canvas = mappedCanvas(tree),
+            searchResults = results,
+            personRows = me.terevo.ui.persons.mapPersonRows(tree, mediaRepository, today),
+            eventRows = me.terevo.ui.events.mapEventRows(tree, mediaRepository, today),
+        )
         return remapSelection(tree, selected, source).withHistory()
     }
 
@@ -602,9 +757,12 @@ class AppController(
         project?.close()
         project = null
         commandBus = null
-        state = AppState()
+        state = AppState(themeMode = state.themeMode)
     }
 
+    private fun loadThemeMode(): ThemeMode = (settings.load() as? Outcome.Ok)?.value?.themeMode ?: ThemeMode.SYSTEM
+
+    @OptIn(ExperimentalTime::class)
     private fun activate(result: Outcome<OpenProject>): AppState {
         val opened = when (result) {
             is Outcome.Ok -> result.value
@@ -624,12 +782,22 @@ class AppController(
         project?.close()
         project = opened
         commandBus = CommandBus(initial = tree, repository = opened.repository)
+        val pinned = when (val loaded = opened.nodePositionRepository.loadAll()) {
+            is Outcome.Ok -> loaded.value.mapValues { (_, position) -> Point(position.first, position.second) }
+            is Outcome.Err -> emptyMap()
+        }
+        state = state.copy(pinnedPositions = pinned)
+        val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
         state = AppState(
             isProjectOpen = true,
             projectName = opened.location.displayName,
             personCount = tree.size,
+            pinnedPositions = pinned,
             canvas = mappedCanvas(tree),
-            status = "Проект «${opened.location.displayName}» открыт",
+            status = "",
+            themeMode = state.themeMode,
+            personRows = me.terevo.ui.persons.mapPersonRows(tree, opened.mediaRepository, today),
+            eventRows = me.terevo.ui.events.mapEventRows(tree, opened.mediaRepository, today),
         )
         return state
     }

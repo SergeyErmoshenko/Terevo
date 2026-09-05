@@ -1,30 +1,26 @@
 package me.terevo.ui
 
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
-import androidx.compose.material3.VerticalDivider
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.*
+import androidx.compose.foundation.draganddrop.dragAndDropTarget
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draganddrop.DragAndDropEvent
+import androidx.compose.ui.draganddrop.DragAndDropTarget
+import androidx.compose.ui.draganddrop.awtTransferable
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.unit.dp
 import me.terevo.domain.command.Batch
@@ -32,22 +28,20 @@ import me.terevo.domain.model.Gender
 import me.terevo.domain.model.Media
 import me.terevo.domain.model.MediaId
 import me.terevo.domain.model.Person
+import me.terevo.layout.LayoutDirection
 import me.terevo.layout.LayoutMode
+import me.terevo.layout.LayoutOptions
+import me.terevo.layout.Point
 import me.terevo.statistics.Statistics
+import me.terevo.ui.components.SegmentedControl
 import me.terevo.ui.kinship.KinshipDialog
 import me.terevo.ui.kinship.KinshipDialogState
-import me.terevo.ui.person.PersonFormDialog
-import me.terevo.ui.person.PersonFormState
-import me.terevo.ui.person.PersonSearchFilter
-import me.terevo.ui.person.RelatedPerson
-import me.terevo.ui.person.RelationDialog
-import me.terevo.ui.person.RelationDialogState
-import me.terevo.ui.person.displayText
-import me.terevo.ui.theme.TerevoTheme
+import me.terevo.ui.person.*
 import me.terevo.ui.statistics.StatisticsScreen
-import me.terevo.ui.tree.TreeCanvas
-import me.terevo.ui.tree.TreeCanvasIntent
-import me.terevo.ui.tree.TreeCanvasState
+import me.terevo.ui.theme.TerevoTheme
+import me.terevo.ui.tree.*
+import java.awt.datatransfer.DataFlavor
+import java.io.File
 import org.jetbrains.skia.Image as SkiaImage
 
 data class GedcomImportState(
@@ -63,6 +57,35 @@ data class MediaViewerState(
     val zoom: Float = 1f,
 )
 
+enum class LayoutDensity {
+    COMPACT,
+    SPACIOUS,
+}
+
+val LayoutDensity.siblingSpacing: Double
+    get() = when (this) {
+        LayoutDensity.COMPACT -> LayoutOptions.DEFAULT_SIBLING_SPACING / 2
+        LayoutDensity.SPACIOUS -> LayoutOptions.DEFAULT_SIBLING_SPACING
+    }
+
+val LayoutDensity.subtreeSpacing: Double
+    get() = when (this) {
+        LayoutDensity.COMPACT -> LayoutOptions.DEFAULT_SUBTREE_SPACING / 2
+        LayoutDensity.SPACIOUS -> LayoutOptions.DEFAULT_SUBTREE_SPACING
+    }
+
+val LayoutDensity.generationSpacing: Double
+    get() = when (this) {
+        LayoutDensity.COMPACT -> LayoutOptions.DEFAULT_GENERATION_SPACING / 2
+        LayoutDensity.SPACIOUS -> LayoutOptions.DEFAULT_GENERATION_SPACING
+    }
+
+val LayoutDensity.spouseSpacing: Double
+    get() = when (this) {
+        LayoutDensity.COMPACT -> LayoutOptions.DEFAULT_SPOUSE_SPACING / 2
+        LayoutDensity.SPACIOUS -> LayoutOptions.DEFAULT_SPOUSE_SPACING
+    }
+
 data class AppState(
     val isProjectOpen: Boolean = false,
     val projectName: String = "",
@@ -70,6 +93,9 @@ data class AppState(
     val canvas: TreeCanvasState = TreeCanvasState(),
     val layoutMode: LayoutMode = LayoutMode.WHOLE_FAMILY,
     val layoutDepth: Int = Int.MAX_VALUE,
+    val layoutDirection: LayoutDirection = LayoutDirection.TOP_DOWN,
+    val layoutDensity: LayoutDensity = LayoutDensity.SPACIOUS,
+    val pinnedPositions: Map<me.terevo.domain.model.PersonId, Point> = emptyMap(),
     val searchFilter: PersonSearchFilter = PersonSearchFilter(),
     val searchResults: List<Person> = emptyList(),
     val selectedPerson: Person? = null,
@@ -86,12 +112,18 @@ data class AppState(
     val redoLabel: String = Strings.REDO,
     val personForm: PersonFormState? = null,
     val relationDialog: RelationDialogState? = null,
+    val dragRelationMenu: DragRelationMenuState? = null,
     val pendingRelation: RelationDialogState? = null,
     val kinshipDialog: KinshipDialogState? = null,
     val statistics: Statistics? = null,
     val gedcomPreview: GedcomImportState? = null,
     val mediaViewer: MediaViewerState? = null,
     val status: String = Strings.NO_PROJECT,
+    val themeMode: me.terevo.domain.port.ThemeMode = me.terevo.domain.port.ThemeMode.SYSTEM,
+    val mainTab: MainTab = MainTab.TREE,
+    val sidebarCollapsed: Boolean = false,
+    val personRows: List<me.terevo.ui.persons.PersonRow> = emptyList(),
+    val eventRows: List<me.terevo.ui.events.EventRow> = emptyList(),
 )
 
 sealed interface AppAction {
@@ -111,6 +143,9 @@ sealed interface AppAction {
     data object NavigateForward : AppAction
     data class ChangeLayoutMode(val mode: LayoutMode) : AppAction
     data class ChangeLayoutDepth(val depth: Int) : AppAction
+    data class ChangeLayoutDirection(val direction: LayoutDirection) : AppAction
+    data class ChangeLayoutDensity(val density: LayoutDensity) : AppAction
+    data object ResetPins : AppAction
     data class ChangeSearchFilter(val filter: PersonSearchFilter) : AppAction
     data object AddPerson : AppAction
     data object EditPerson : AppAction
@@ -119,6 +154,7 @@ sealed interface AppAction {
     data object AddChild : AppAction
     data object AddSpouse : AppAction
     data object ChooseMedia : AppAction
+    data class DropMedia(val paths: List<String>) : AppAction
     data class OpenMedia(val id: MediaId) : AppAction
     data class RemoveMedia(val id: MediaId) : AppAction
     data class ChangeMediaZoom(val zoom: Float) : AppAction
@@ -134,6 +170,8 @@ sealed interface AppAction {
     data object CreateRelative : AppAction
     data object SaveRelation : AppAction
     data object CancelRelation : AppAction
+    data class ChooseDragRelationMode(val mode: RelationMode) : AppAction
+    data object CancelDragRelationMenu : AppAction
     data object OpenKinshipDialog : AppAction
     data class UpdateKinshipDialog(val dialog: KinshipDialogState) : AppAction
     data object CloseKinshipDialog : AppAction
@@ -141,6 +179,12 @@ sealed interface AppAction {
     data object CloseStatistics : AppAction
     data object ExportPng : AppAction
     data object ExportPdf : AppAction
+    data class ChangeThemeMode(val mode: me.terevo.domain.port.ThemeMode) : AppAction
+    data class ChangeMainTab(val tab: MainTab) : AppAction
+    data object ToggleSidebar : AppAction
+    data object ChoosePersonFormMedia : AppAction
+    data class DropPersonFormMedia(val paths: List<String>) : AppAction
+    data class RemovePendingPersonMedia(val path: String) : AppAction
 }
 
 data class EmptyProjectAction(
@@ -161,74 +205,44 @@ fun App(
 ) {
     val spacing = TerevoTheme.spacing
     val colors = TerevoTheme.colors
-    Column(modifier.fillMaxSize()) {
-        val statistics = state.statistics
-        if (statistics != null) {
-            StatisticsScreen(
-                statistics = statistics,
-                onClose = { onAction(AppAction.CloseStatistics) },
-                modifier = Modifier.weight(1f),
+    Surface(modifier = modifier.fillMaxSize(), color = colors.canvas, contentColor = colors.textPrimary) {
+        Column(Modifier.fillMaxSize()) {
+            SegmentedControl(
+                options = MainTab.entries,
+                selected = state.mainTab,
+                label = { it.label },
+                onSelect = { onAction(AppAction.ChangeMainTab(it)) },
+                modifier = Modifier.padding(spacing.small),
             )
-        } else {
-            Row(Modifier.weight(1f).fillMaxWidth()) {
-                Box(
-                    Modifier
-                        .width(spacing.sidebarWidth)
-                        .fillMaxSize()
-                        .background(colors.sidebar)
-                        .padding(spacing.medium),
-                ) {
-                    if (state.isProjectOpen) {
-                        ProjectSidebar(state, onAction)
-                    }
-                }
-                VerticalDivider()
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxSize()
-                        .background(colors.canvas),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(spacing.medium),
-                    ) {
-                        if (!state.isProjectOpen) {
-                            Text(Strings.EMPTY_PROJECT)
-                            Row(horizontalArrangement = Arrangement.spacedBy(spacing.small)) {
-                                Button(onClick = { onAction(emptyProjectActions[0].action) }) {
-                                    Text(emptyProjectActions[0].label)
-                                }
-                                OutlinedButton(onClick = { onAction(emptyProjectActions[1].action) }) {
-                                    Text(emptyProjectActions[1].label)
-                                }
-                            }
-                        } else if (state.personCount == 0) {
-                            Text(Strings.EMPTY_TREE)
-                            Button(onClick = { onAction(AppAction.AddPerson) }) {
-                                Text(Strings.ADD_PERSON)
-                            }
-                        }
-                    }
-                    if (state.isProjectOpen && state.personCount > 0) {
-                        TreeCanvas(
-                            state = state.canvas,
-                            onIntent = { onAction(AppAction.Canvas(it)) },
-                        )
-                    }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when (state.mainTab) {
+                    MainTab.TREE -> MainTreeTab(state, onAction)
+                    MainTab.PERSONS -> me.terevo.ui.persons.PersonsScreen(
+                        rows = state.personRows,
+                        onSelect = {
+                            onAction(AppAction.SelectPerson(it))
+                            onAction(AppAction.ChangeMainTab(MainTab.TREE))
+                        },
+                        onEdit = {
+                            onAction(AppAction.SelectPerson(it))
+                            onAction(AppAction.EditPerson)
+                        },
+                    )
+
+                    MainTab.EVENTS -> me.terevo.ui.events.EventsScreen(state.eventRows)
+                    MainTab.DOCUMENTS -> me.terevo.ui.documents.DocumentsScreen(state, onAction)
                 }
             }
-        }
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(spacing.statusBarHeight)
-                .background(colors.statusBar)
-                .padding(horizontal = spacing.small),
-            contentAlignment = Alignment.CenterStart,
-        ) {
-            Text(state.status)
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(spacing.statusBarHeight)
+                    .background(colors.statusBar)
+                    .padding(horizontal = spacing.small),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                Text(state.status)
+            }
         }
     }
     state.personForm?.let { form ->
@@ -239,6 +253,9 @@ fun App(
             onCancel = { onAction(AppAction.CancelPerson) },
             onConfirmDiscard = { onAction(AppAction.ConfirmDiscardPerson) },
             onKeepEditing = { onAction(AppAction.KeepEditingPerson) },
+            onChooseMedia = { onAction(AppAction.ChoosePersonFormMedia) },
+            onDropMedia = { onAction(AppAction.DropPersonFormMedia(it)) },
+            onRemovePendingMedia = { onAction(AppAction.RemovePendingPersonMedia(it)) },
         )
     }
     state.relationDialog?.let { dialog ->
@@ -316,8 +333,140 @@ fun App(
 }
 
 @Composable
+private fun MainTreeTab(state: AppState, onAction: (AppAction) -> Unit) {
+    val spacing = TerevoTheme.spacing
+    val colors = TerevoTheme.colors
+    val statistics = state.statistics
+    if (statistics != null) {
+        StatisticsScreen(
+            statistics = statistics,
+            onClose = { onAction(AppAction.CloseStatistics) },
+            modifier = Modifier.fillMaxSize(),
+        )
+    } else {
+        Row(Modifier.fillMaxSize()) {
+            if (state.isProjectOpen) {
+                val sidebarWidth by animateDpAsState(
+                    targetValue = if (state.sidebarCollapsed) 0.dp else spacing.sidebarWidth,
+                    animationSpec = tween(SIDEBAR_ANIMATION_MS),
+                )
+                Box(
+                    Modifier
+                        .width(sidebarWidth)
+                        .fillMaxHeight()
+                        .background(colors.sidebar),
+                ) {
+                    if (sidebarWidth > 0.dp) {
+                        Box(
+                            Modifier
+                                .width(spacing.sidebarWidth)
+                                .fillMaxHeight()
+                                .padding(spacing.medium),
+                        ) {
+                            ProjectSidebar(state, onAction)
+                        }
+                    }
+                }
+            } else {
+                Box(
+                    Modifier
+                        .width(spacing.sidebarWidth)
+                        .fillMaxSize()
+                        .background(colors.sidebar)
+                        .padding(spacing.medium),
+                )
+            }
+            VerticalDivider()
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxSize()
+                    .background(colors.canvas),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (state.isProjectOpen) {
+                    IconButton(
+                        onClick = { onAction(AppAction.ToggleSidebar) },
+                        modifier = Modifier.align(Alignment.TopStart).padding(spacing.small),
+                    ) {
+                        Icon(
+                            if (state.sidebarCollapsed) {
+                                Icons.AutoMirrored.Filled.KeyboardArrowRight
+                            } else {
+                                Icons.AutoMirrored.Filled.KeyboardArrowLeft
+                            },
+                            contentDescription = if (state.sidebarCollapsed) Strings.EXPAND_SIDEBAR else Strings.COLLAPSE_SIDEBAR,
+                        )
+                    }
+                }
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(spacing.medium),
+                ) {
+                    if (!state.isProjectOpen) {
+                        Icon(
+                            Icons.Filled.FolderOpen,
+                            contentDescription = null,
+                            tint = colors.textSecondary,
+                            modifier = Modifier.size(EMPTY_STATE_ICON_SIZE.dp),
+                        )
+                        Text(Strings.EMPTY_PROJECT, color = colors.textSecondary)
+                        Row(horizontalArrangement = Arrangement.spacedBy(spacing.small)) {
+                            Button(onClick = { onAction(emptyProjectActions[0].action) }) {
+                                Text(emptyProjectActions[0].label)
+                            }
+                            OutlinedButton(onClick = { onAction(emptyProjectActions[1].action) }) {
+                                Text(emptyProjectActions[1].label)
+                            }
+                        }
+                    } else if (state.personCount == 0) {
+                        Icon(
+                            Icons.Filled.AccountTree,
+                            contentDescription = null,
+                            tint = colors.textSecondary,
+                            modifier = Modifier.size(EMPTY_STATE_ICON_SIZE.dp),
+                        )
+                        Text(Strings.EMPTY_TREE, color = colors.textSecondary)
+                        Button(onClick = { onAction(AppAction.AddPerson) }) {
+                            Icon(Icons.Filled.PersonAdd, contentDescription = null)
+                            Text(Strings.ADD_PERSON, modifier = Modifier.padding(start = spacing.small))
+                        }
+                    }
+                }
+                if (state.isProjectOpen && state.personCount > 0) {
+                    TreeCanvas(
+                        state = state.canvas,
+                        onIntent = { onAction(AppAction.Canvas(it)) },
+                    )
+                    FloatingActionButton(
+                        onClick = { onAction(AppAction.FitToScreen) },
+                        containerColor = colors.accent,
+                        contentColor = colors.cardSurface,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(spacing.medium),
+                    ) {
+                        Icon(Icons.Filled.MyLocation, contentDescription = Strings.FIT_TO_SCREEN)
+                    }
+                    state.dragRelationMenu?.let { menu ->
+                        DragRelationMenu(
+                            state = menu,
+                            onChoose = { onAction(AppAction.ChooseDragRelationMode(it)) },
+                            onDismiss = { onAction(AppAction.CancelDragRelationMenu) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ProjectSidebar(state: AppState, onAction: (AppAction) -> Unit) {
     val spacing = TerevoTheme.spacing
+    val colors = TerevoTheme.colors
+    val sectionColors = CardDefaults.cardColors(containerColor = colors.surfaceVariant)
+    val sectionElevation = CardDefaults.cardElevation(defaultElevation = spacing.extraSmall)
     Column(
         modifier = Modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(spacing.small),
@@ -325,162 +474,297 @@ private fun ProjectSidebar(state: AppState, onAction: (AppAction) -> Unit) {
         Text("${Strings.PROJECT}: ${state.projectName}")
         Text("${Strings.PEOPLE}: ${state.personCount}")
         Button(onClick = { onAction(AppAction.AddPerson) }, modifier = Modifier.fillMaxWidth()) {
-            Text(Strings.ADD_PERSON)
+            Icon(Icons.Filled.PersonAdd, contentDescription = null)
+            Text(Strings.ADD_PERSON, modifier = Modifier.padding(start = spacing.small))
         }
-        OutlinedTextField(
-            value = state.searchFilter.query,
-            onValueChange = { onAction(AppAction.ChangeSearchFilter(state.searchFilter.copy(query = it))) },
-            label = { Text(Strings.SEARCH) },
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            value = state.searchFilter.place,
-            onValueChange = { onAction(AppAction.ChangeSearchFilter(state.searchFilter.copy(place = it))) },
-            label = { Text(Strings.SEARCH_PLACE) },
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(spacing.small)) {
-            OutlinedTextField(
-                value = state.searchFilter.birthYearFrom?.toString().orEmpty(),
-                onValueChange = {
-                    onAction(AppAction.ChangeSearchFilter(state.searchFilter.copy(birthYearFrom = it.toIntOrNull())))
-                },
-                label = { Text(Strings.SEARCH_BIRTH_FROM) },
-                modifier = Modifier.weight(1f),
-            )
-            OutlinedTextField(
-                value = state.searchFilter.birthYearTo?.toString().orEmpty(),
-                onValueChange = {
-                    onAction(AppAction.ChangeSearchFilter(state.searchFilter.copy(birthYearTo = it.toIntOrNull())))
-                },
-                label = { Text(Strings.SEARCH_BIRTH_TO) },
-                modifier = Modifier.weight(1f),
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(spacing.small)) {
-            OutlinedTextField(
-                value = state.searchFilter.deathYearFrom?.toString().orEmpty(),
-                onValueChange = {
-                    onAction(AppAction.ChangeSearchFilter(state.searchFilter.copy(deathYearFrom = it.toIntOrNull())))
-                },
-                label = { Text(Strings.SEARCH_DEATH_FROM) },
-                modifier = Modifier.weight(1f),
-            )
-            OutlinedTextField(
-                value = state.searchFilter.deathYearTo?.toString().orEmpty(),
-                onValueChange = {
-                    onAction(AppAction.ChangeSearchFilter(state.searchFilter.copy(deathYearTo = it.toIntOrNull())))
-                },
-                label = { Text(Strings.SEARCH_DEATH_TO) },
-                modifier = Modifier.weight(1f),
-            )
-        }
-        Text(Strings.FILTER_GENDER)
-        listOf<Gender?>(null).plus(Gender.entries).forEach { gender ->
-            OutlinedButton(
-                onClick = { onAction(AppAction.ChangeSearchFilter(state.searchFilter.copy(gender = gender))) },
-                enabled = state.searchFilter.gender != gender,
-            ) { Text(gender?.searchLabel ?: Strings.FILTER_ANY) }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(spacing.small)) {
-            listOf(null, true, false).forEach { hasParents ->
-                OutlinedButton(
-                    onClick = {
-                        onAction(AppAction.ChangeSearchFilter(state.searchFilter.copy(hasParents = hasParents)))
-                    },
-                    enabled = state.searchFilter.hasParents != hasParents,
-                ) {
+        Card(
+            colors = sectionColors,
+            elevation = sectionElevation,
+            shape = RoundedCornerShape(spacing.cornerRadius),
+            border = BorderStroke(1.dp, colors.outline),
+        ) {
+            Column(
+                modifier = Modifier.padding(spacing.small),
+                verticalArrangement = Arrangement.spacedBy(spacing.small),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.FilterList, contentDescription = null, tint = colors.accent)
                     Text(
-                        when (hasParents) {
+                        Strings.SEARCH_FILTERS,
+                        modifier = Modifier.padding(start = spacing.small),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
+                OutlinedTextField(
+                    value = state.searchFilter.query,
+                    onValueChange = { onAction(AppAction.ChangeSearchFilter(state.searchFilter.copy(query = it))) },
+                    label = { Text(Strings.SEARCH) },
+                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = state.searchFilter.place,
+                    onValueChange = { onAction(AppAction.ChangeSearchFilter(state.searchFilter.copy(place = it))) },
+                    label = { Text(Strings.SEARCH_PLACE) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    Strings.BIRTH_YEAR_RANGE,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = colors.textSecondary
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(spacing.small)) {
+                    OutlinedTextField(
+                        value = state.searchFilter.birthYearFrom?.toString().orEmpty(),
+                        onValueChange = {
+                            onAction(AppAction.ChangeSearchFilter(state.searchFilter.copy(birthYearFrom = it.toIntOrNull())))
+                        },
+                        label = { Text(Strings.YEAR_FROM) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    OutlinedTextField(
+                        value = state.searchFilter.birthYearTo?.toString().orEmpty(),
+                        onValueChange = {
+                            onAction(AppAction.ChangeSearchFilter(state.searchFilter.copy(birthYearTo = it.toIntOrNull())))
+                        },
+                        label = { Text(Strings.YEAR_TO) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                Text(
+                    Strings.DEATH_YEAR_RANGE,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = colors.textSecondary
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(spacing.small)) {
+                    OutlinedTextField(
+                        value = state.searchFilter.deathYearFrom?.toString().orEmpty(),
+                        onValueChange = {
+                            onAction(AppAction.ChangeSearchFilter(state.searchFilter.copy(deathYearFrom = it.toIntOrNull())))
+                        },
+                        label = { Text(Strings.YEAR_FROM) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    OutlinedTextField(
+                        value = state.searchFilter.deathYearTo?.toString().orEmpty(),
+                        onValueChange = {
+                            onAction(AppAction.ChangeSearchFilter(state.searchFilter.copy(deathYearTo = it.toIntOrNull())))
+                        },
+                        label = { Text(Strings.YEAR_TO) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                Text(Strings.FILTER_GENDER, style = MaterialTheme.typography.labelLarge, color = colors.textSecondary)
+                SegmentedControl(
+                    options = listOf<Gender?>(null).plus(Gender.entries),
+                    selected = state.searchFilter.gender,
+                    label = { it?.searchLabel ?: Strings.FILTER_ANY },
+                    onSelect = { onAction(AppAction.ChangeSearchFilter(state.searchFilter.copy(gender = it))) },
+                )
+                Text(
+                    Strings.FILTER_HAS_PARENTS,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = colors.textSecondary
+                )
+                SegmentedControl(
+                    options = listOf(null, true, false),
+                    selected = state.searchFilter.hasParents,
+                    label = {
+                        when (it) {
                             true -> Strings.FILTER_HAS_PARENTS
                             false -> Strings.FILTER_NO_PARENTS
                             null -> Strings.FILTER_ANY
-                        },
-                    )
-                }
-            }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(spacing.small)) {
-            listOf(null, true, false).forEach { hasDates ->
-                OutlinedButton(
-                    onClick = { onAction(AppAction.ChangeSearchFilter(state.searchFilter.copy(hasDates = hasDates))) },
-                    enabled = state.searchFilter.hasDates != hasDates,
-                ) {
-                    Text(
-                        when (hasDates) {
+                        }
+                    },
+                    onSelect = { onAction(AppAction.ChangeSearchFilter(state.searchFilter.copy(hasParents = it))) },
+                )
+                Text(
+                    Strings.FILTER_HAS_DATES,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = colors.textSecondary
+                )
+                SegmentedControl(
+                    options = listOf(null, true, false),
+                    selected = state.searchFilter.hasDates,
+                    label = {
+                        when (it) {
                             true -> Strings.FILTER_HAS_DATES
                             false -> Strings.FILTER_NO_DATES
                             null -> Strings.FILTER_ANY
-                        },
-                    )
+                        }
+                    },
+                    onSelect = { onAction(AppAction.ChangeSearchFilter(state.searchFilter.copy(hasDates = it))) },
+                )
+                if (state.searchResults.isNotEmpty()) {
+                    Text("${Strings.SEARCH_RESULTS}: ${state.searchResults.size}")
+                    state.searchResults.forEach { result ->
+                        OutlinedButton(
+                            onClick = { onAction(AppAction.SelectPerson(result.id)) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(result.name.display) }
+                    }
                 }
             }
         }
-        if (state.searchResults.isNotEmpty()) {
-            Text("${Strings.SEARCH_RESULTS}: ${state.searchResults.size}")
-            state.searchResults.forEach { result ->
+        Card(
+            colors = sectionColors,
+            elevation = sectionElevation,
+            shape = RoundedCornerShape(spacing.cornerRadius),
+            border = BorderStroke(1.dp, colors.outline),
+        ) {
+            Column(
+                modifier = Modifier.padding(spacing.small),
+                verticalArrangement = Arrangement.spacedBy(spacing.small),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.AccountTree, contentDescription = null, tint = colors.accent)
+                    Text(
+                        Strings.TREE_MODE,
+                        modifier = Modifier.padding(start = spacing.small),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
+                SegmentedControl(
+                    options = LayoutMode.entries,
+                    selected = state.layoutMode,
+                    label = { it.label },
+                    onSelect = { onAction(AppAction.ChangeLayoutMode(it)) },
+                )
+                Text("${Strings.TREE_DEPTH}: ${state.layoutDepthLabel}")
+                Row(horizontalArrangement = Arrangement.spacedBy(spacing.small)) {
+                    OutlinedButton(
+                        onClick = { onAction(AppAction.ChangeLayoutDepth(state.previousLayoutDepth)) },
+                        enabled = state.layoutDepth == Int.MAX_VALUE || state.layoutDepth > 1,
+                    ) { Text(Strings.DECREASE) }
+                    OutlinedButton(
+                        onClick = { onAction(AppAction.ChangeLayoutDepth(state.nextLayoutDepth)) },
+                        enabled = state.layoutDepth != Int.MAX_VALUE && state.layoutDepth < MAX_LAYOUT_DEPTH,
+                    ) { Text(Strings.INCREASE) }
+                }
                 OutlinedButton(
-                    onClick = { onAction(AppAction.SelectPerson(result.id)) },
+                    onClick = { onAction(AppAction.ChangeLayoutDepth(Int.MAX_VALUE)) },
+                    enabled = state.layoutDepth != Int.MAX_VALUE,
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text(result.name.display) }
+                ) { Text(Strings.TREE_UNLIMITED, maxLines = 1) }
+                Text(
+                    Strings.LAYOUT_DIRECTION,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = colors.textSecondary
+                )
+                SegmentedControl(
+                    options = LayoutDirection.entries,
+                    selected = state.layoutDirection,
+                    label = { it.label },
+                    onSelect = { onAction(AppAction.ChangeLayoutDirection(it)) },
+                )
+                Text(Strings.LAYOUT_DENSITY, style = MaterialTheme.typography.labelLarge, color = colors.textSecondary)
+                SegmentedControl(
+                    options = LayoutDensity.entries,
+                    selected = state.layoutDensity,
+                    label = { it.label },
+                    onSelect = { onAction(AppAction.ChangeLayoutDensity(it)) },
+                )
+                OutlinedButton(
+                    onClick = { onAction(AppAction.ResetPins) },
+                    enabled = state.pinnedPositions.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(Strings.RESET_PINS, maxLines = 1) }
             }
-        }
-        Text(Strings.TREE_MODE)
-        LayoutMode.entries.forEach { mode ->
-            OutlinedButton(
-                onClick = { onAction(AppAction.ChangeLayoutMode(mode)) },
-                enabled = state.layoutMode != mode,
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text(mode.label) }
-        }
-        Text("${Strings.TREE_DEPTH}: ${state.layoutDepthLabel}")
-        Row(horizontalArrangement = Arrangement.spacedBy(spacing.small)) {
-            OutlinedButton(
-                onClick = { onAction(AppAction.ChangeLayoutDepth(state.previousLayoutDepth)) },
-                enabled = state.layoutDepth == Int.MAX_VALUE || state.layoutDepth > 1,
-            ) { Text(Strings.DECREASE) }
-            OutlinedButton(
-                onClick = { onAction(AppAction.ChangeLayoutDepth(state.nextLayoutDepth)) },
-                enabled = state.layoutDepth != Int.MAX_VALUE && state.layoutDepth < MAX_LAYOUT_DEPTH,
-            ) { Text(Strings.INCREASE) }
-            OutlinedButton(
-                onClick = { onAction(AppAction.ChangeLayoutDepth(Int.MAX_VALUE)) },
-                enabled = state.layoutDepth != Int.MAX_VALUE,
-            ) { Text(Strings.TREE_UNLIMITED) }
         }
         val person = state.selectedPerson ?: return@Column
         HorizontalDivider()
-        Text(person.name.display)
-        Text(person.lifeSpan.displayText())
-        Row(horizontalArrangement = Arrangement.spacedBy(spacing.small)) {
-            OutlinedButton(onClick = { onAction(AppAction.EditPerson) }) { Text(Strings.EDIT_PERSON) }
-            OutlinedButton(onClick = { onAction(AppAction.DeletePerson) }) { Text(Strings.DELETE_PERSON) }
-        }
-        Button(onClick = { onAction(AppAction.AddParent) }, modifier = Modifier.fillMaxWidth()) {
-            Text(Strings.ADD_PARENT)
-        }
-        Button(onClick = { onAction(AppAction.AddChild) }, modifier = Modifier.fillMaxWidth()) {
-            Text(Strings.ADD_CHILD)
-        }
-        Button(onClick = { onAction(AppAction.AddSpouse) }, modifier = Modifier.fillMaxWidth()) {
-            Text(Strings.ADD_SPOUSE)
-        }
-        OutlinedButton(onClick = { onAction(AppAction.OpenKinshipDialog) }, modifier = Modifier.fillMaxWidth()) {
-            Text(Strings.DETERMINE_KINSHIP)
+        Card(
+            colors = sectionColors,
+            elevation = sectionElevation,
+            shape = RoundedCornerShape(spacing.cornerRadius),
+            border = BorderStroke(1.dp, colors.outline),
+        ) {
+            Column(
+                modifier = Modifier.padding(spacing.small),
+                verticalArrangement = Arrangement.spacedBy(spacing.small),
+            ) {
+                Text(person.name.display)
+                Text(person.lifeSpan.displayText(), color = colors.textSecondary)
+                Row(horizontalArrangement = Arrangement.spacedBy(spacing.small)) {
+                    OutlinedButton(onClick = { onAction(AppAction.EditPerson) }) {
+                        Icon(Icons.Filled.Edit, contentDescription = null)
+                        Text(Strings.EDIT_PERSON, modifier = Modifier.padding(start = spacing.small))
+                    }
+                    OutlinedButton(onClick = { onAction(AppAction.DeletePerson) }) {
+                        Icon(Icons.Filled.Delete, contentDescription = null, tint = colors.error)
+                        Text(Strings.DELETE_PERSON, modifier = Modifier.padding(start = spacing.small))
+                    }
+                }
+                Button(onClick = { onAction(AppAction.AddParent) }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Filled.ArrowUpward, contentDescription = null)
+                    Text(Strings.ADD_PARENT, modifier = Modifier.padding(start = spacing.small))
+                }
+                Button(onClick = { onAction(AppAction.AddChild) }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Filled.ArrowDownward, contentDescription = null)
+                    Text(Strings.ADD_CHILD, modifier = Modifier.padding(start = spacing.small))
+                }
+                Button(onClick = { onAction(AppAction.AddSpouse) }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Filled.Favorite, contentDescription = null)
+                    Text(Strings.ADD_SPOUSE, modifier = Modifier.padding(start = spacing.small))
+                }
+                OutlinedButton(
+                    onClick = { onAction(AppAction.OpenKinshipDialog) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Filled.AccountTree, contentDescription = null)
+                    Text(Strings.DETERMINE_KINSHIP, modifier = Modifier.padding(start = spacing.small))
+                }
+            }
         }
         HorizontalDivider()
-        Text(Strings.MEDIA)
-        OutlinedButton(onClick = { onAction(AppAction.ChooseMedia) }, modifier = Modifier.fillMaxWidth()) {
-            Text(Strings.ADD_MEDIA)
-        }
-        state.selectedMedia.forEach { media ->
-            Text(media.fileName)
-            Row(horizontalArrangement = Arrangement.spacedBy(spacing.small)) {
-                OutlinedButton(onClick = { onAction(AppAction.OpenMedia(media.id)) }) {
-                    Text(Strings.OPEN_MEDIA)
+        Card(
+            colors = sectionColors,
+            elevation = sectionElevation,
+            shape = RoundedCornerShape(spacing.cornerRadius),
+            border = BorderStroke(1.dp, colors.outline),
+        ) {
+            val mediaDropTarget = object : DragAndDropTarget {
+                @OptIn(ExperimentalComposeUiApi::class)
+                override fun onDrop(event: DragAndDropEvent): Boolean {
+                    val transferable = event.awtTransferable
+                    if (!transferable.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) return false
+                    @Suppress("UNCHECKED_CAST")
+                    val files = transferable.getTransferData(DataFlavor.javaFileListFlavor) as? List<File>
+                        ?: return false
+                    onAction(AppAction.DropMedia(files.map { it.absolutePath }))
+                    return true
                 }
-                OutlinedButton(onClick = { onAction(AppAction.RemoveMedia(media.id)) }) {
-                    Text(Strings.REMOVE_MEDIA)
+            }
+            Column(
+                modifier = Modifier
+                    .padding(spacing.small)
+                    .dragAndDropTarget(shouldStartDragAndDrop = { true }, target = mediaDropTarget),
+                verticalArrangement = Arrangement.spacedBy(spacing.small),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.AttachFile, contentDescription = null, tint = colors.accent)
+                    Text(
+                        Strings.MEDIA,
+                        modifier = Modifier.padding(start = spacing.small),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
+                OutlinedButton(onClick = { onAction(AppAction.ChooseMedia) }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Filled.AttachFile, contentDescription = null)
+                    Text(Strings.ADD_MEDIA, modifier = Modifier.padding(start = spacing.small))
+                }
+                state.selectedMedia.forEach { media ->
+                    Text(media.fileName)
+                    Row(horizontalArrangement = Arrangement.spacedBy(spacing.small)) {
+                        OutlinedButton(onClick = { onAction(AppAction.OpenMedia(media.id)) }) {
+                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
+                            Text(Strings.OPEN_MEDIA, modifier = Modifier.padding(start = spacing.small))
+                        }
+                        OutlinedButton(onClick = { onAction(AppAction.RemoveMedia(media.id)) }) {
+                            Icon(Icons.Filled.Delete, contentDescription = null, tint = colors.error)
+                            Text(Strings.REMOVE_MEDIA, modifier = Modifier.padding(start = spacing.small))
+                        }
+                    }
                 }
             }
         }
@@ -507,6 +791,18 @@ private val LayoutMode.label: String
         LayoutMode.WHOLE_FAMILY -> Strings.TREE_WHOLE_FAMILY
     }
 
+private val LayoutDirection.label: String
+    get() = when (this) {
+        LayoutDirection.TOP_DOWN -> Strings.DIRECTION_TOP_DOWN
+        LayoutDirection.LEFT_RIGHT -> Strings.DIRECTION_LEFT_RIGHT
+    }
+
+private val LayoutDensity.label: String
+    get() = when (this) {
+        LayoutDensity.COMPACT -> Strings.DENSITY_COMPACT
+        LayoutDensity.SPACIOUS -> Strings.DENSITY_SPACIOUS
+    }
+
 private val Gender.searchLabel: String
     get() = when (this) {
         Gender.MALE -> Strings.GENDER_MALE
@@ -522,17 +818,33 @@ private fun RelatedPeople(
     onAction: (AppAction) -> Unit,
 ) {
     if (people.isEmpty()) return
+    val spacing = TerevoTheme.spacing
+    val colors = TerevoTheme.colors
     HorizontalDivider()
-    Text(title)
-    people.forEach { person ->
-        val role = state.relatedPeople.firstOrNull { it.person.id == person.id }?.role
-        OutlinedButton(
-            onClick = { onAction(AppAction.SelectPerson(person.id)) },
-            modifier = Modifier.fillMaxWidth(),
+    Card(
+        colors = CardDefaults.cardColors(containerColor = colors.surfaceVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = spacing.extraSmall),
+        shape = RoundedCornerShape(spacing.cornerRadius),
+        border = BorderStroke(1.dp, colors.outline),
+    ) {
+        Column(
+            modifier = Modifier.padding(spacing.small),
+            verticalArrangement = Arrangement.spacedBy(spacing.small),
         ) {
-            Text(listOfNotNull(role, person.name.display).joinToString(": "))
+            Text(title, style = MaterialTheme.typography.labelLarge, color = colors.textSecondary)
+            people.forEach { person ->
+                val role = state.relatedPeople.firstOrNull { it.person.id == person.id }?.role
+                OutlinedButton(
+                    onClick = { onAction(AppAction.SelectPerson(person.id)) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(listOfNotNull(role, person.name.display).joinToString(": "))
+                }
+            }
         }
     }
 }
 
 private const val MAX_LAYOUT_DEPTH: Int = 20
+private const val EMPTY_STATE_ICON_SIZE: Int = 48
+private const val SIDEBAR_ANIMATION_MS: Int = 220

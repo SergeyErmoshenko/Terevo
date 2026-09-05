@@ -1,0 +1,28 @@
+CREATE TABLE node_position (
+    person_id TEXT NOT NULL PRIMARY KEY,
+    x REAL NOT NULL,
+    y REAL NOT NULL,
+    FOREIGN KEY (person_id) REFERENCES person(id) ON DELETE CASCADE
+);
+
+selectAllPositions:
+SELECT * FROM node_position;
+
+selectPositionById:
+SELECT * FROM node_position WHERE person_id = ?;
+
+insertPosition:
+INSERT INTO node_position(person_id, x, y)
+VALUES (:person_id, :x, :y);
+
+updatePosition:
+UPDATE node_position
+SET x = :x,
+    y = :y
+WHERE person_id = :person_id;
+
+deletePosition:
+DELETE FROM node_position WHERE person_id = ?;
+
+deleteAllPositions:
+DELETE FROM node_position;

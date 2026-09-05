@@ -1,27 +1,27 @@
 package me.terevo.ui.person
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.draganddrop.dragAndDropTarget
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draganddrop.DragAndDropEvent
+import androidx.compose.ui.draganddrop.DragAndDropTarget
+import androidx.compose.ui.draganddrop.awtTransferable
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import me.terevo.domain.model.Gender
 import me.terevo.ui.Strings
+import me.terevo.ui.components.SelectableOption
 import me.terevo.ui.theme.TerevoTheme
+import java.awt.datatransfer.DataFlavor
+import java.io.File
 
 @Composable
 fun PersonFormDialog(
@@ -31,14 +31,32 @@ fun PersonFormDialog(
     onCancel: () -> Unit,
     onConfirmDiscard: () -> Unit,
     onKeepEditing: () -> Unit,
+    onChooseMedia: () -> Unit = {},
+    onDropMedia: (List<String>) -> Unit = {},
+    onRemovePendingMedia: (String) -> Unit = {},
 ) {
     val spacing = TerevoTheme.spacing
+    val colors = TerevoTheme.colors
     AlertDialog(
         onDismissRequest = onCancel,
         title = { Text(if (state.original == null) Strings.NEW_PERSON else Strings.EDITING_PERSON) },
         text = {
+            val mediaDropTarget = object : DragAndDropTarget {
+                @OptIn(ExperimentalComposeUiApi::class)
+                override fun onDrop(event: DragAndDropEvent): Boolean {
+                    val transferable = event.awtTransferable
+                    if (!transferable.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) return false
+                    @Suppress("UNCHECKED_CAST")
+                    val files = transferable.getTransferData(DataFlavor.javaFileListFlavor) as? List<File>
+                        ?: return false
+                    onDropMedia(files.map { it.absolutePath })
+                    return true
+                }
+            }
             Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .dragAndDropTarget(shouldStartDragAndDrop = { true }, target = mediaDropTarget),
                 verticalArrangement = Arrangement.spacedBy(spacing.small),
             ) {
                 PersonField(Strings.SURNAME, state.surname, capitalizeWords = true) {
@@ -52,7 +70,7 @@ fun PersonFormDialog(
                 }
                 Text(Strings.GENDER)
                 Gender.entries.forEach { gender ->
-                    Option(gender == state.gender, gender.label) {
+                    SelectableOption(gender == state.gender, gender.label) {
                         onChange(
                             validatePersonForm(
                                 state.copy(
@@ -77,6 +95,12 @@ fun PersonFormDialog(
                 }
                 PersonField(Strings.BIRTH_PLACE, state.birthPlace) {
                     onChange(validatePersonForm(state.copy(birthPlace = it)))
+                }
+                PersonField(Strings.RESIDENCE, state.residence) {
+                    onChange(validatePersonForm(state.copy(residence = it)))
+                }
+                PersonField(Strings.OCCUPATION, state.occupation) {
+                    onChange(validatePersonForm(state.copy(occupation = it)))
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(spacing.small)) {
                     Switch(
@@ -107,6 +131,22 @@ fun PersonFormDialog(
                 PersonField(Strings.NOTES, state.notes) {
                     onChange(validatePersonForm(state.copy(notes = it)))
                 }
+                Text(Strings.MEDIA)
+                state.pendingMediaPaths.forEach { path ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(spacing.small),
+                    ) {
+                        Text(File(path).name, modifier = Modifier.weight(1f))
+                        IconButton(onClick = { onRemovePendingMedia(path) }) {
+                            Icon(Icons.Filled.Delete, contentDescription = Strings.REMOVE_MEDIA, tint = colors.error)
+                        }
+                    }
+                }
+                OutlinedButton(onClick = onChooseMedia) {
+                    Icon(Icons.Filled.AttachFile, contentDescription = null)
+                    Text(Strings.ADD_MEDIA, modifier = Modifier.padding(start = spacing.small))
+                }
                 Text(Strings.CUSTOM_FIELDS)
                 state.customFields.forEachIndexed { index, field ->
                     PersonField(Strings.CUSTOM_FIELD_KEY, field.key) { key ->
@@ -116,14 +156,24 @@ fun PersonFormDialog(
                             ),
                         )
                     }
-                    state.customFieldSuggestions.filter { field.key.isBlank() || it.startsWith(field.key, ignoreCase = true) }
+                    state.customFieldSuggestions.filter {
+                        field.key.isBlank() || it.startsWith(
+                            field.key,
+                            ignoreCase = true
+                        )
+                    }
                         .take(CUSTOM_FIELD_SUGGESTION_LIMIT)
                         .forEach { suggestion ->
                             OutlinedButton(
                                 onClick = {
                                     onChange(
                                         validatePersonForm(
-                                            state.copy(customFields = state.customFields.updated(index, field.copy(key = suggestion))),
+                                            state.copy(
+                                                customFields = state.customFields.updated(
+                                                    index,
+                                                    field.copy(key = suggestion)
+                                                )
+                                            ),
                                         ),
                                     )
                                 },
@@ -151,7 +201,7 @@ fun PersonFormDialog(
                 ) { Text(Strings.ADD_CUSTOM_FIELD) }
                 if (!state.hasDateInputError()) state.blockingError?.let { Text(it) }
                 state.warnings.forEach { warning ->
-                    Text(warning, color = MaterialTheme.colorScheme.tertiary)
+                    Text(warning, color = colors.error)
                 }
             }
         },
@@ -178,7 +228,7 @@ fun PersonFormDialog(
 }
 
 @Composable
-private fun EventDateFields(
+fun EventDateFields(
     label: String,
     input: EventDateInput,
     error: String?,
@@ -186,7 +236,7 @@ private fun EventDateFields(
 ) {
     Text(label)
     EventDateMode.entries.forEach { mode ->
-        Option(mode == input.mode, mode.label) { onChange(input.copy(mode = mode)) }
+        SelectableOption(mode == input.mode, mode.label) { onChange(input.copy(mode = mode)) }
     }
     when (input.mode) {
         EventDateMode.EXACT, EventDateMode.APPROXIMATE -> PersonField(
@@ -195,6 +245,7 @@ private fun EventDateFields(
             placeholder = Strings.DATE_FORMAT,
             error = error,
         ) { onChange(input.copy(value = it)) }
+
         EventDateMode.RANGE -> {
             PersonField(Strings.RANGE_START, input.value, Strings.DATE_FORMAT, error = error) {
                 onChange(input.copy(value = it))
@@ -203,15 +254,8 @@ private fun EventDateFields(
                 onChange(input.copy(end = it))
             }
         }
-        EventDateMode.UNKNOWN -> Unit
-    }
-}
 
-@Composable
-private fun Option(selected: Boolean, label: String, onClick: () -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
-        RadioButton(selected = selected, onClick = onClick)
-        Text(label)
+        EventDateMode.UNKNOWN -> Unit
     }
 }
 
@@ -228,7 +272,9 @@ private fun PersonField(
         value = value,
         onValueChange = onChange,
         label = { Text(label) },
-        placeholder = if (placeholder.isEmpty()) null else { { Text(placeholder) } },
+        placeholder = if (placeholder.isEmpty()) null else {
+            { Text(placeholder) }
+        },
         supportingText = error?.let { message -> { Text(message) } },
         isError = error != null,
         modifier = Modifier.fillMaxWidth(),
