@@ -1,3 +1,4 @@
+import org.gradle.internal.os.OperatingSystem
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.jvm.toolchain.JvmVendorSpec
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
@@ -56,6 +57,13 @@ sqldelight {
 compose.desktop {
     application {
         mainClass = "me.terevo.app.MainKt"
+        if (OperatingSystem.current().isMacOsX) {
+            jvmArgs += listOf(
+                "-Xdock:name=Terevo",
+                "-Xdock:icon=${rootProject.file("packaging/icons/icon.icns")}",
+                "-Dapple.awt.application.name=Terevo",
+            )
+        }
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi)
             packageName = "Terevo"
@@ -67,6 +75,16 @@ compose.desktop {
                 extension = "terevo",
                 description = "Terevo genealogy project",
             )
+            windows {
+                iconFile.set(rootProject.file("packaging/icons/icon.ico"))
+            }
+            macOS {
+                iconFile.set(rootProject.file("packaging/icons/icon.icns"))
+                bundleID = "me.terevo.app"
+            }
+            linux {
+                iconFile.set(rootProject.file("packaging/icons/icon.png"))
+            }
         }
     }
 }

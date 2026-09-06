@@ -25,7 +25,7 @@ class PngExporterTest {
         bounds = bounds,
     )
     private val visuals = TreeVisuals(
-        mapOf(nodeId to PersonVisual(nodeId, "Иванов Иван", "1900 – 1970", PersonVisualGender.MALE, version = 0L)),
+        mapOf(nodeId to PersonVisual(nodeId, listOf("Иванов", "Иван"), "1900 – 1970", PersonVisualGender.MALE, version = 0L)),
     )
 
     @Test

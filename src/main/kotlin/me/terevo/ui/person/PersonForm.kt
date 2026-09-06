@@ -33,6 +33,7 @@ data class PersonFormState(
     val patronymic: String = "",
     val maidenName: String = "",
     val gender: Gender = Gender.UNKNOWN,
+    val requiredGender: Gender? = null,
     val birth: EventDateInput = EventDateInput(),
     val isAlive: Boolean = true,
     val death: EventDateInput = EventDateInput(),

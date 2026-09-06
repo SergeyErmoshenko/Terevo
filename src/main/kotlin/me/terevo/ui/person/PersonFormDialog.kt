@@ -69,7 +69,7 @@ fun PersonFormDialog(
                     onChange(validatePersonForm(state.copy(patronymic = it)))
                 }
                 Text(Strings.GENDER)
-                Gender.entries.forEach { gender ->
+                (state.requiredGender?.let { listOf(it) } ?: Gender.entries).forEach { gender ->
                     SelectableOption(gender == state.gender, gender.label) {
                         onChange(
                             validatePersonForm(
@@ -157,10 +157,8 @@ fun PersonFormDialog(
                         )
                     }
                     state.customFieldSuggestions.filter {
-                        field.key.isBlank() || it.startsWith(
-                            field.key,
-                            ignoreCase = true
-                        )
+                        !it.equals(field.key.trim(), ignoreCase = true) &&
+                                (field.key.isBlank() || it.startsWith(field.key, ignoreCase = true))
                     }
                         .take(CUSTOM_FIELD_SUGGESTION_LIMIT)
                         .forEach { suggestion ->

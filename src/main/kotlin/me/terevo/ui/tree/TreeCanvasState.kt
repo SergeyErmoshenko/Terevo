@@ -57,6 +57,8 @@ sealed interface TreeCanvasIntent {
     data class Zoom(val position: Point, val factor: Double) : TreeCanvasIntent
     data class SelectAt(val position: Point) : TreeCanvasIntent
     data class EditAt(val position: Point) : TreeCanvasIntent
+    data class AddPersonAt(val position: Point) : TreeCanvasIntent
+    data class AddRelativeAt(val nodeId: NodeId, val mode: RelationMode) : TreeCanvasIntent
     data object ClearSelection : TreeCanvasIntent
     data object FitToScreen : TreeCanvasIntent
     data object ActualSize : TreeCanvasIntent
@@ -84,6 +86,8 @@ fun reduceTreeCanvas(state: TreeCanvasState, intent: TreeCanvasIntent): TreeCanv
     )
 
     is TreeCanvasIntent.EditAt -> state
+    is TreeCanvasIntent.AddPersonAt -> state
+    is TreeCanvasIntent.AddRelativeAt -> state
     TreeCanvasIntent.ClearSelection -> state.copy(highlight = TreeHighlight.NONE)
     TreeCanvasIntent.FitToScreen -> state.copy(
         camera = state.camera.fit(

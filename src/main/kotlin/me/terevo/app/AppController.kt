@@ -249,12 +249,16 @@ class AppController(
             is Outcome.Err -> return state.copy(status = "Не удалось открыть файл")
         }
         state = try {
-            val content = if (media.mimeType.startsWith("image/")) readBoundedImage(Path.of(path)) else byteArrayOf()
+            val content = when {
+                media.mimeType.startsWith("image/") -> readBoundedImage(Path.of(path))
+                media.mimeType == "application/pdf" -> readBoundedFile(Path.of(path))
+                else -> byteArrayOf()
+            }
             state.copy(mediaViewer = MediaViewerState(media, content))
         } catch (_: java.io.IOException) {
             state.copy(status = "Не удалось открыть файл")
         } catch (_: IllegalArgumentException) {
-            state.copy(status = "Изображение слишком большое или повреждено")
+            state.copy(status = "Файл слишком большой или повреждён")
         }
         return state
     }
@@ -309,8 +313,15 @@ class AppController(
     fun startCreatingRelative(): AppState {
         val relation = state.relationDialog ?: return state
         val tree = commandBus?.tree?.value ?: return state
+        val requiredGender = if (relation.mode == RelationMode.SPOUSE) relation.source.gender.opposite() else null
         state = state.copy(
-            personForm = validatePersonForm(PersonFormState(customFieldSuggestions = customFieldSuggestions(tree))),
+            personForm = validatePersonForm(
+                PersonFormState(
+                    gender = requiredGender ?: Gender.UNKNOWN,
+                    requiredGender = requiredGender,
+                    customFieldSuggestions = customFieldSuggestions(tree),
+                ),
+            ),
             relationDialog = null,
             pendingRelation = relation,
         )
@@ -505,6 +516,17 @@ class AppController(
                 val selected = canvas.spatialIndex.hitTest(canvas.camera.screenToWorld(intent.position))?.toPersonId()
                 remapSelection(commandBus?.tree?.value ?: return state, selected).also { state = it }
                 startEditingPerson()
+            }
+
+            is TreeCanvasIntent.AddPersonAt -> {
+                state = state.copy(canvas = canvas)
+                startAddingPerson()
+            }
+
+            is TreeCanvasIntent.AddRelativeAt -> {
+                val selected = intent.nodeId.toPersonId()
+                remapSelection(commandBus?.tree?.value ?: return state, selected).also { state = it }
+                startAddingRelation(intent.mode)
             }
 
             TreeCanvasIntent.DragNodeEnd -> {
@@ -808,7 +830,7 @@ private fun me.terevo.layout.NodeId.toPersonId(): PersonId = PersonId.parse(valu
 private fun PersonId.toNodeId(): me.terevo.layout.NodeId = me.terevo.layout.NodeId(value.toString())
 
 private fun readBoundedImage(path: Path): ByteArray {
-    require(Files.size(path) <= MAX_IMAGE_FILE_BYTES)
+    require(Files.size(path) <= MAX_PREVIEW_FILE_BYTES)
     ImageIO.createImageInputStream(path.toFile()).use { input ->
         requireNotNull(input)
         val readers = ImageIO.getImageReaders(input)
@@ -824,6 +846,11 @@ private fun readBoundedImage(path: Path): ByteArray {
     return Files.readAllBytes(path)
 }
 
+private fun readBoundedFile(path: Path): ByteArray {
+    require(Files.size(path) <= MAX_PREVIEW_FILE_BYTES)
+    return Files.readAllBytes(path)
+}
+
 fun DomainError.toRussianMessage(): String = when (this) {
     is DomainError.Project.AlreadyExists -> "Файл проекта уже существует"
     is DomainError.Project.NotFound -> "Файл проекта не найден"
@@ -836,6 +863,6 @@ fun DomainError.toRussianMessage(): String = when (this) {
     else -> "Не удалось открыть проект"
 }
 
-private const val MAX_IMAGE_FILE_BYTES: Long = 25L * 1024L * 1024L
+private const val MAX_PREVIEW_FILE_BYTES: Long = 25L * 1024L * 1024L
 private const val MAX_IMAGE_DIMENSION: Int = 10_000
 private const val DEFAULT_PNG_SCALE: Double = 1.0

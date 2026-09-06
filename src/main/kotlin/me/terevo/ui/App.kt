@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draganddrop.DragAndDropEvent
 import androidx.compose.ui.draganddrop.DragAndDropTarget
 import androidx.compose.ui.draganddrop.awtTransferable
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.unit.dp
 import me.terevo.domain.command.Batch
@@ -41,7 +42,11 @@ import me.terevo.ui.statistics.StatisticsScreen
 import me.terevo.ui.theme.TerevoTheme
 import me.terevo.ui.tree.*
 import java.awt.datatransfer.DataFlavor
+import java.io.ByteArrayOutputStream
 import java.io.File
+import javax.imageio.ImageIO
+import org.apache.pdfbox.Loader
+import org.apache.pdfbox.rendering.PDFRenderer
 import org.jetbrains.skia.Image as SkiaImage
 
 data class GedcomImportState(
@@ -56,6 +61,15 @@ data class MediaViewerState(
     val content: ByteArray,
     val zoom: Float = 1f,
 )
+
+private fun ByteArray.renderPdfPreview(): ImageBitmap {
+    Loader.loadPDF(this).use { document ->
+        val page = PDFRenderer(document).renderImageWithDPI(0, 150f)
+        val output = ByteArrayOutputStream()
+        ImageIO.write(page, "png", output)
+        return SkiaImage.makeFromEncoded(output.toByteArray()).toComposeImageBitmap()
+    }
+}
 
 enum class LayoutDensity {
     COMPACT,
@@ -227,6 +241,7 @@ fun App(
                             onAction(AppAction.SelectPerson(it))
                             onAction(AppAction.EditPerson)
                         },
+                        onAddPerson = { onAction(AppAction.AddPerson) },
                     )
 
                     MainTab.EVENTS -> me.terevo.ui.events.EventsScreen(state.eventRows)
@@ -297,11 +312,15 @@ fun App(
     }
     state.mediaViewer?.let { viewer ->
         val image = remember(viewer.content) {
-            if (viewer.media.mimeType.startsWith("image/")) {
-                runCatching { SkiaImage.makeFromEncoded(viewer.content).toComposeImageBitmap() }.getOrNull()
-            } else {
-                null
-            }
+            runCatching {
+                when {
+                    viewer.media.mimeType.startsWith("image/") ->
+                        SkiaImage.makeFromEncoded(viewer.content).toComposeImageBitmap()
+
+                    viewer.media.mimeType == "application/pdf" -> viewer.content.renderPdfPreview()
+                    else -> null
+                }
+            }.getOrNull()
         }
         AlertDialog(
             onDismissRequest = { onAction(AppAction.CloseMedia) },

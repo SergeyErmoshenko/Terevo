@@ -47,9 +47,10 @@ fun exportTreePng(
     val scene = ImageComposeScene(width, height) {
         val textMeasurer = rememberTextMeasurer()
         val cornerRadiusPx = with(LocalDensity.current) { TerevoTheme.spacing.cornerRadius.toPx() }
+        val density = LocalDensity.current.density
         Canvas(Modifier.size(width.dp, height.dp)) {
             drawRect(color = colors.canvas, size = size)
-            drawTree(layout, visuals, camera, colors, textMeasurer, TreeHighlight.NONE, cornerRadiusPx)
+            drawTree(layout, visuals, camera, colors, textMeasurer, TreeHighlight.NONE, cornerRadiusPx, density)
         }
     }
     return try {

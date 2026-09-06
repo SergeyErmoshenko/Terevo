@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -53,7 +54,12 @@ private fun List<PersonRow>.sortedByColumn(sortState: PersonSortState): List<Per
 }
 
 @Composable
-fun PersonsScreen(rows: List<PersonRow>, onSelect: (PersonId) -> Unit, onEdit: (PersonId) -> Unit) {
+fun PersonsScreen(
+    rows: List<PersonRow>,
+    onSelect: (PersonId) -> Unit,
+    onEdit: (PersonId) -> Unit,
+    onAddPerson: () -> Unit,
+) {
     val spacing = TerevoTheme.spacing
     val colors = TerevoTheme.colors
     var query by remember { mutableStateOf("") }
@@ -74,13 +80,22 @@ fun PersonsScreen(rows: List<PersonRow>, onSelect: (PersonId) -> Unit, onEdit: (
     }
     val sorted = remember(filtered, sortState) { filtered.sortedByColumn(sortState) }
     Column(modifier = Modifier.fillMaxSize().padding(spacing.medium)) {
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            label = { Text(Strings.SEARCH) },
-            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-            modifier = Modifier.fillMaxWidth(),
-        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(spacing.small),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                label = { Text(Strings.SEARCH) },
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                modifier = Modifier.weight(1f),
+            )
+            Button(onClick = onAddPerson) {
+                Icon(Icons.Filled.PersonAdd, contentDescription = null)
+                Text(Strings.ADD_PERSON, modifier = Modifier.padding(start = spacing.small))
+            }
+        }
         Box(modifier = Modifier.padding(top = spacing.small)) {
             PersonRowHeader(
                 sortState = sortState,

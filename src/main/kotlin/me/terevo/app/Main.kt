@@ -5,6 +5,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
@@ -12,6 +15,7 @@ import androidx.compose.ui.window.MenuBar
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import org.jetbrains.skia.Image
 import me.terevo.domain.port.ThemeMode
 import me.terevo.persistence.SqliteProjectService
 import me.terevo.ui.App
@@ -26,6 +30,7 @@ fun main() = application {
     val windowState = rememberWindowState(size = DpSize(1280.dp, 800.dp))
     val controller = remember { AppController(SqliteProjectService()) }
     var appState by remember { mutableStateOf(controller.state) }
+    val appIcon = remember { loadAppIcon() }
     Window(
         onCloseRequest = {
             controller.close()
@@ -61,6 +66,7 @@ fun main() = application {
         },
         state = windowState,
         title = if (appState.isProjectOpen) "${Strings.APP_NAME} — ${appState.projectName}" else Strings.APP_NAME,
+        icon = appIcon,
     ) {
         val dialogs = remember(window) { ProjectDialogs(window as? Frame) }
         val onAction: (AppAction) -> Unit = { action ->
@@ -209,4 +215,11 @@ fun main() = application {
             App(state = appState, onAction = onAction)
         }
     }
+}
+
+private fun loadAppIcon(): Painter {
+    val bytes = requireNotNull(object {}.javaClass.getResourceAsStream("/icons/icon.png")) {
+        "Missing app icon resource /icons/icon.png"
+    }.use { it.readBytes() }
+    return BitmapPainter(Image.makeFromEncoded(bytes).toComposeImageBitmap())
 }

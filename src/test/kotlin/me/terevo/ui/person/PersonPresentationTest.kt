@@ -25,6 +25,6 @@ class PersonPresentationTest {
         val expected = listOf(3, 2, 1980).joinToString(".") { it.toString().padStart(if (it == 1980) 4 else 2, '0') }
 
         assertEquals("Родился: $expected", lifeSpan.displayText())
-        assertEquals("р. $expected", lifeSpan.cardDates())
+        assertEquals(expected, lifeSpan.cardDates())
     }
 }

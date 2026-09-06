@@ -46,6 +46,7 @@ fun DrawScope.drawTree(
     textMeasurer: TextMeasurer,
     highlight: TreeHighlight,
     cornerRadiusPx: Float = 0f,
+    density: Float = 1f,
 ) {
     layout.edges.forEach { drawEdge(it, camera, colors, highlight.accentOf(it.edge)) }
     layout.nodes.forEach { (id, rect) ->
@@ -59,6 +60,7 @@ fun DrawScope.drawTree(
             highlight.accentOf(id),
             highlight.roleOf(id),
             cornerRadiusPx,
+            density,
         )
     }
 }
@@ -95,6 +97,7 @@ private fun DrawScope.drawPerson(
     accent: NodeAccent,
     role: String?,
     cornerRadiusPx: Float,
+    density: Float = 1f,
 ) {
     val topLeft = camera.worldToScreen(Point(rect.left, rect.top)).toOffset()
     val size = Size((rect.width * camera.scale).toFloat(), (rect.height * camera.scale).toFloat())
@@ -165,34 +168,42 @@ private fun DrawScope.drawPerson(
     val maxTextWidth = (size.width - textLeft - (TEXT_RIGHT_MARGIN * camera.scale).toFloat())
         .coerceAtLeast(0f)
         .roundToInt()
-    val nameStyle =
-        TextStyle(color = colors.textPrimary.copy(alpha = contentAlpha), fontSize = (NAME_SIZE * camera.scale).sp)
-    visual.nameLines.forEachIndexed { index, line ->
-        val measured = textMeasurer.measure(
-            line,
-            nameStyle,
+    val nameStyle = TextStyle(
+        color = colors.textPrimary.copy(alpha = contentAlpha),
+        fontSize = (NAME_SIZE * camera.scale / density).sp,
+    )
+    val lineGap = (NAME_LINE_GAP * camera.scale).toFloat()
+    clipRect(topLeft.x, topLeft.y, topLeft.x + size.width, topLeft.y + size.height) {
+        var contentTop = (TEXT_TOP * camera.scale).toFloat()
+        visual.nameLines.forEach { line ->
+            val measured = textMeasurer.measure(
+                line,
+                nameStyle,
+                overflow = TextOverflow.Ellipsis,
+                softWrap = false,
+                maxLines = 1,
+                constraints = Constraints(maxWidth = maxTextWidth),
+            )
+            drawText(measured, topLeft = topLeft + Offset(textLeft, contentTop))
+            contentTop += measured.size.height + lineGap
+        }
+        val years = textMeasurer.measure(
+            visual.lifeYears,
+            TextStyle(
+                color = colors.textSecondary.copy(alpha = contentAlpha),
+                fontSize = (YEARS_SIZE * camera.scale / density).sp,
+            ),
             overflow = TextOverflow.Ellipsis,
             softWrap = false,
             maxLines = 1,
             constraints = Constraints(maxWidth = maxTextWidth),
         )
-        val lineTop = (TEXT_TOP + index * NAME_LINE_HEIGHT) * camera.scale
-        drawText(measured, topLeft = topLeft + Offset(textLeft, lineTop.toFloat()))
+        drawText(years, topLeft = topLeft + Offset(textLeft, contentTop))
     }
-    val years = textMeasurer.measure(
-        visual.lifeYears,
-        TextStyle(color = colors.textSecondary.copy(alpha = contentAlpha), fontSize = (YEARS_SIZE * camera.scale).sp),
-        overflow = TextOverflow.Ellipsis,
-        softWrap = false,
-        maxLines = 1,
-        constraints = Constraints(maxWidth = maxTextWidth),
-    )
-    val yearsTop = (TEXT_TOP + visual.nameLines.size * NAME_LINE_HEIGHT) * camera.scale
-    drawText(years, topLeft = topLeft + Offset(textLeft, yearsTop.toFloat()))
     if (role != null) {
         val label = textMeasurer.measure(
             role,
-            TextStyle(color = colors.accent, fontSize = (ROLE_SIZE * camera.scale).sp),
+            TextStyle(color = colors.accent, fontSize = (ROLE_SIZE * camera.scale / density).sp),
         )
         val roleTop = topLeft.y - label.size.height - (ROLE_GAP * camera.scale).toFloat()
         drawText(label, topLeft = Offset(topLeft.x, roleTop))
@@ -250,11 +261,11 @@ private const val TEXT_RIGHT_MARGIN: Float = 10f
 private const val THUMBNAIL_SIZE: Float = 40f
 private const val THUMBNAIL_MARGIN: Float = 8f
 private const val TEXT_TOP: Float = 8f
-private const val NAME_LINE_HEIGHT: Float = 18f
+private const val NAME_LINE_GAP: Float = 2f
 private const val ROLE_GAP: Float = 4f
-private const val NAME_SIZE: Int = 14
-private const val YEARS_SIZE: Int = 12
-private const val ROLE_SIZE: Int = 11
+private const val NAME_SIZE: Int = 20
+private const val YEARS_SIZE: Int = 16
+private const val ROLE_SIZE: Int = 14
 private const val BASE_GRID_SPACING: Double = 32.0
 private const val MIN_GRID_SPACING_PX: Double = 12.0
 private const val GRID_LOD_FACTOR: Double = 4.0

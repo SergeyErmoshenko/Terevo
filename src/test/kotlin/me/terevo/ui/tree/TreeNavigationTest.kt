@@ -21,8 +21,8 @@ class TreeNavigationTest {
     )
     private val visuals = TreeVisuals(
         mapOf(
-            first to PersonVisual(first, "Первый", "1900–1980", PersonVisualGender.MALE, 1),
-            second to PersonVisual(second, "Второй", "1930–", PersonVisualGender.UNKNOWN, 1),
+            first to PersonVisual(first, listOf("Первый"), "1900–1980", PersonVisualGender.MALE, 1),
+            second to PersonVisual(second, listOf("Второй"), "1930–", PersonVisualGender.UNKNOWN, 1),
         ),
     )
     private val initial = TreeNavigationState(
@@ -39,7 +39,7 @@ class TreeNavigationTest {
         val selected = reduceNavigation(initial, TreeNavigationIntent.Select(second), ::details)
 
         assertEquals(second, selected.canvas.selected)
-        assertEquals("Второй", selected.details?.person?.name)
+        assertEquals("Второй", selected.details?.person?.nameLines?.joinToString(" "))
         assertEquals(Point(50.0, 75.0), selected.canvas.camera.offset)
         assertTrue(selected.cameraAnimationMillis < 300)
     }
