@@ -5,9 +5,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AttachFile
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -16,6 +13,9 @@ import androidx.compose.ui.draganddrop.DragAndDropEvent
 import androidx.compose.ui.draganddrop.DragAndDropTarget
 import androidx.compose.ui.draganddrop.awtTransferable
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import compose.icons.TablerIcons
+import compose.icons.tablericons.Paperclip
+import compose.icons.tablericons.Trash
 import me.terevo.domain.model.Gender
 import me.terevo.ui.Strings
 import me.terevo.ui.components.SelectableOption
@@ -139,12 +139,12 @@ fun PersonFormDialog(
                     ) {
                         Text(File(path).name, modifier = Modifier.weight(1f))
                         IconButton(onClick = { onRemovePendingMedia(path) }) {
-                            Icon(Icons.Filled.Delete, contentDescription = Strings.REMOVE_MEDIA, tint = colors.error)
+                            Icon(TablerIcons.Trash, contentDescription = Strings.REMOVE_MEDIA, tint = colors.error)
                         }
                     }
                 }
                 OutlinedButton(onClick = onChooseMedia) {
-                    Icon(Icons.Filled.AttachFile, contentDescription = null)
+                    Icon(TablerIcons.Paperclip, contentDescription = null)
                     Text(Strings.ADD_MEDIA, modifier = Modifier.padding(start = spacing.small))
                 }
                 Text(Strings.CUSTOM_FIELDS)

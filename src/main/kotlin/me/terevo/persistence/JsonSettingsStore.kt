@@ -1,9 +1,5 @@
 package me.terevo.persistence
 
-import java.io.IOException
-import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
@@ -13,6 +9,10 @@ import me.terevo.domain.port.ProjectLocation
 import me.terevo.domain.port.SettingsStore
 import me.terevo.domain.port.ThemeMode
 import me.terevo.domain.port.UserSettings
+import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 
 @Serializable
 private data class SettingsDocument(

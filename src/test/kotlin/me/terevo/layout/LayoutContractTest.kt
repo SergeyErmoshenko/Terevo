@@ -1,9 +1,9 @@
 package me.terevo.layout
 
-import kotlin.test.Test
-import kotlin.test.assertEquals
 import me.terevo.testing.graphOf
 import me.terevo.testing.nodeId
+import kotlin.test.Test
+import kotlin.test.assertEquals
 
 class LayoutContractTest {
 

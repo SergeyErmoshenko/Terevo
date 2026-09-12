@@ -6,19 +6,7 @@ import me.terevo.domain.Outcome
 import me.terevo.domain.command.AddPerson
 import me.terevo.domain.command.AddRelation
 import me.terevo.domain.command.Batch
-import me.terevo.domain.model.DatePrecision
-import me.terevo.domain.model.EventDate
-import me.terevo.domain.model.FamilyTree
-import me.terevo.domain.model.Gender
-import me.terevo.domain.model.LifeSpan
-import me.terevo.domain.model.Marriage
-import me.terevo.domain.model.MarriageStatus
-import me.terevo.domain.model.ParentChild
-import me.terevo.domain.model.ParentKind
-import me.terevo.domain.model.Person
-import me.terevo.domain.model.PersonId
-import me.terevo.domain.model.PersonName
-import me.terevo.domain.model.RelationId
+import me.terevo.domain.model.*
 
 data class GedcomLine(
     val level: Int,
@@ -191,16 +179,21 @@ private fun event(record: List<GedcomLine>, tag: String): Pair<EventDate, String
     return date to place
 }
 
-private fun parseDate(value: String): EventDate {
+private val APPROXIMATE_DATE_PREFIXES = listOf("ABT ", "CAL ", "EST ", "BEF ", "AFT ")
+
+private fun parseDate(value: String): EventDate = try {
     val normalized = value.trim().uppercase()
     if (normalized.startsWith("BET ") && " AND " in normalized) {
         val (from, to) = normalized.removePrefix("BET ").split(" AND ", limit = 2).map(::parseSimpleDate)
-        return EventDate.Range.of(from.first, to.first).ok()
+        EventDate.Range.of(from.first, to.first).ok()
+    } else {
+        val prefix = APPROXIMATE_DATE_PREFIXES.firstOrNull { normalized.startsWith(it) }
+        val (date, precision) = parseSimpleDate(normalized.removePrefix(prefix.orEmpty()))
+        if (prefix != null || precision != DatePrecision.DAY) EventDate.Approximate(date, precision)
+        else EventDate.Exact(date)
     }
-    val approximate = normalized.removePrefix("ABT ")
-    val (date, precision) = parseSimpleDate(approximate)
-    return if (normalized.startsWith("ABT ") || precision != DatePrecision.DAY) EventDate.Approximate(date, precision)
-    else EventDate.Exact(date)
+} catch (malformed: Exception) {
+    EventDate.Unknown
 }
 
 private fun parseSimpleDate(value: String): Pair<LocalDate, DatePrecision> {

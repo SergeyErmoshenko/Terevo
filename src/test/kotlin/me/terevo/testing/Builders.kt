@@ -1,13 +1,7 @@
 package me.terevo.testing
 
 import kotlinx.datetime.LocalDate
-import me.terevo.domain.model.EventDate
-import me.terevo.domain.model.Gender
-import me.terevo.domain.model.LifeSpan
-import me.terevo.domain.model.Person
-import me.terevo.domain.model.PersonId
-import me.terevo.domain.model.PersonName
-import me.terevo.domain.model.Place
+import me.terevo.domain.model.*
 
 fun year(value: Int): EventDate = EventDate.Exact(LocalDate(value, 1, 1))
 

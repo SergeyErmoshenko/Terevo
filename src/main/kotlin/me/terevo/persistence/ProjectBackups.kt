@@ -2,13 +2,13 @@ package me.terevo.persistence
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import io.github.oshai.kotlinlogging.KotlinLogging
+import me.terevo.domain.port.ProjectLocation
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.SQLException
 import java.time.Instant
 import kotlin.streams.asSequence
-import me.terevo.domain.port.ProjectLocation
 
 private val logger = KotlinLogging.logger {}
 

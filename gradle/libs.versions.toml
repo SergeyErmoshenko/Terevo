@@ -13,6 +13,8 @@ pdfbox = "3.0.5"
 kotlinLogging = "7.0.7"
 logback = "1.5.18"
 junitPlatform = "1.13.4"
+materialKolor = "4.0.5"
+tablerIcons = "1.1.1"
 
 [libraries]
 kotlinx-coroutines = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -28,6 +30,9 @@ sqldelight-primitive-adapters = { module = "app.cash.sqldelight:primitive-adapte
 pdfbox = { module = "org.apache.pdfbox:pdfbox", version.ref = "pdfbox" }
 kotlin-logging = { module = "io.github.oshai:kotlin-logging-jvm", version.ref = "kotlinLogging" }
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
+
+material-kolor = { module = "com.materialkolor:material-kolor", version.ref = "materialKolor" }
+tabler-icons = { module = "br.com.devsrsouza.compose.icons:tabler-icons", version.ref = "tablerIcons" }
 
 konsist = { module = "com.lemonappdev:konsist", version.ref = "konsist" }
 kotest-property = { module = "io.kotest:kotest-property", version.ref = "kotest" }

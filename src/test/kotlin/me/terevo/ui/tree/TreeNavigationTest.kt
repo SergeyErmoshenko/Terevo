@@ -1,14 +1,10 @@
 package me.terevo.ui.tree
 
+import me.terevo.layout.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import me.terevo.layout.Layout
-import me.terevo.layout.NodeId
-import me.terevo.layout.Point
-import me.terevo.layout.Rect
-import me.terevo.layout.Size
 
 class TreeNavigationTest {
     private val first = NodeId("first")

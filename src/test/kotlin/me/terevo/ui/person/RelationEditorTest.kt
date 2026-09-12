@@ -1,9 +1,5 @@
 package me.terevo.ui.person
 
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertIs
-import kotlin.test.assertTrue
 import me.terevo.domain.command.CommandBus
 import me.terevo.domain.model.FamilyTree
 import me.terevo.domain.model.ParentChild
@@ -11,6 +7,10 @@ import me.terevo.domain.model.ParentKind
 import me.terevo.testing.InMemoryTreeRepository
 import me.terevo.testing.person
 import me.terevo.testing.shouldBeOk
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 class RelationEditorTest {
 

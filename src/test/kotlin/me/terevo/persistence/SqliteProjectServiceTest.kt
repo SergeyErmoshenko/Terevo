@@ -1,14 +1,5 @@
 package me.terevo.persistence
 
-import java.nio.file.Files
-import java.nio.file.Path
-import kotlin.io.path.createTempDirectory
-import kotlin.test.AfterTest
-import kotlin.test.BeforeTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
 import me.terevo.domain.DomainError
 import me.terevo.domain.command.AddPerson
 import me.terevo.domain.command.CommandBus
@@ -18,6 +9,10 @@ import me.terevo.persistence.db.TerevoDatabase
 import me.terevo.testing.person
 import me.terevo.testing.shouldBeErr
 import me.terevo.testing.shouldBeOk
+import java.nio.file.Files
+import java.nio.file.Path
+import kotlin.io.path.createTempDirectory
+import kotlin.test.*
 
 class SqliteProjectServiceTest {
 
@@ -77,6 +72,26 @@ class SqliteProjectServiceTest {
 
         assertEquals(stored, reopened.repository.load().shouldBeOk().person(stored.id))
         assertEquals(TerevoDatabase.Schema.version, reopened.schemaVersion)
+    }
+
+    @Test
+    fun `opening a project created before the events feature adds the missing tables`() {
+        val location = locationOf("family")
+        val project = service.create(location).shouldBeOk()
+        val stored = person(surname = "Иванов", born = 1900)
+        CommandBus(repository = project.repository).execute(AddPerson(stored)).shouldBeOk()
+        project.close().shouldBeOk()
+        val driver = SqliteProjectService.openDriver(Path.of(location.path))
+        driver.execute(null, "DROP TABLE event_participant", 0)
+        driver.execute(null, "DROP TABLE event", 0)
+        driver.close()
+
+        val reopened = track(service.open(location).shouldBeOk())
+
+        assertEquals(stored, reopened.repository.load().shouldBeOk().person(stored.id))
+        val added = person(surname = "Петров")
+        CommandBus(repository = reopened.repository).execute(AddPerson(added)).shouldBeOk()
+        assertEquals(added, reopened.repository.load().shouldBeOk().person(added.id))
     }
 
     @Test
@@ -142,7 +157,8 @@ class SqliteProjectServiceTest {
     @Test
     fun `save as bundled project copies media content`() {
         val source = ProjectLocation(workspace.resolve("family").resolve(ProjectLocation.DEFAULT_FILE_NAME).toString())
-        val target = ProjectLocation(workspace.resolve("family-copy").resolve(ProjectLocation.DEFAULT_FILE_NAME).toString())
+        val target =
+            ProjectLocation(workspace.resolve("family-copy").resolve(ProjectLocation.DEFAULT_FILE_NAME).toString())
         val project = service.create(source).shouldBeOk()
         val mediaSource = workspace.resolve("photo.txt")
         Files.writeString(mediaSource, "photo")

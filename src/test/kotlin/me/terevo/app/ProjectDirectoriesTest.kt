@@ -1,9 +1,9 @@
 package me.terevo.app
 
+import me.terevo.domain.port.ProjectLocation
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import me.terevo.domain.port.ProjectLocation
 
 class ProjectDirectoriesTest {
 

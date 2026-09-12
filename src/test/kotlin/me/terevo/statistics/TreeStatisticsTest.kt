@@ -1,14 +1,14 @@
 package me.terevo.statistics
 
-import kotlin.system.measureTimeMillis
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 import me.terevo.domain.model.FamilyTree
 import me.terevo.domain.model.ParentChild
 import me.terevo.testing.largeFamilyTree
 import me.terevo.testing.person
 import me.terevo.testing.shouldBeOk
+import kotlin.system.measureTimeMillis
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class TreeStatisticsTest {
 

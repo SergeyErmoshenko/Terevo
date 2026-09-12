@@ -1,6 +1,5 @@
 package me.terevo.export
 
-import java.io.IOException
 import me.terevo.domain.DomainError
 import me.terevo.domain.Outcome
 import me.terevo.domain.model.FamilyTree
@@ -8,6 +7,7 @@ import me.terevo.layout.LayoutOptions
 import me.terevo.layout.Size
 import org.apache.pdfbox.pdmodel.PDDocument
 import org.apache.pdfbox.pdmodel.font.PDType0Font
+import java.io.IOException
 
 object PdfFiles {
     val A4_LANDSCAPE: Size = Size(width = 841.89, height = 595.28)

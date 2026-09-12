@@ -1,26 +1,18 @@
 package me.terevo.ui.statistics
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.BarChart
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Text
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import compose.icons.TablerIcons
+import compose.icons.tablericons.ArrowLeft
+import compose.icons.tablericons.ChartBar
 import me.terevo.statistics.Statistics
 import me.terevo.ui.Strings
 import me.terevo.ui.theme.TerevoTheme
@@ -34,7 +26,7 @@ fun StatisticsScreen(statistics: Statistics, onClose: () -> Unit, modifier: Modi
         verticalArrangement = Arrangement.spacedBy(spacing.medium),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.BarChart, contentDescription = null, tint = colors.selection)
+            Icon(TablerIcons.ChartBar, contentDescription = null, tint = colors.selection)
             Text(
                 Strings.STATISTICS,
                 modifier = Modifier.padding(start = spacing.small),
@@ -42,7 +34,7 @@ fun StatisticsScreen(statistics: Statistics, onClose: () -> Unit, modifier: Modi
             )
         }
         OutlinedButton(onClick = onClose) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+            Icon(TablerIcons.ArrowLeft, contentDescription = null)
             Text(Strings.STATISTICS_BACK_TO_TREE, modifier = Modifier.padding(start = spacing.small))
         }
         HorizontalDivider()

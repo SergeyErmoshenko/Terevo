@@ -6,11 +6,7 @@ import me.terevo.domain.invariant.Change
 import me.terevo.domain.invariant.Invariants
 import me.terevo.domain.invariant.ValidationWarning
 import me.terevo.domain.map
-import me.terevo.domain.model.FamilyTree
-import me.terevo.domain.model.Person
-import me.terevo.domain.model.PersonId
-import me.terevo.domain.model.Relation
-import me.terevo.domain.model.RelationId
+import me.terevo.domain.model.*
 
 data class CommandResult(
     val tree: FamilyTree,
@@ -53,13 +49,20 @@ data class RemovePerson(val id: PersonId) : Command {
     override fun applyTo(tree: FamilyTree): Outcome<CommandResult> {
         val removed = tree.person(id) ?: return Outcome.Err(DomainError.Missing.Person(id))
         val detachedLinks = tree.relationsOf(id)
-        val restore = Batch(listOf(AddPerson(removed)) + detachedLinks.map { AddRelation(it) })
+        val detachedEvents = tree.events.values.filter { event -> event.participants.any { it.personId == id } }
+        val restore = Batch(
+            listOf(AddPerson(removed)) +
+                    detachedLinks.map { AddRelation(it) } +
+                    detachedEvents.map { AddEvent(it) },
+        )
         return tree.removePerson(id).map {
             CommandResult(
                 tree = it,
                 inverse = restore,
                 warnings = emptyList(),
-                changes = detachedLinks.map { Change.RemoveRelation(it.id) } + Change.RemovePerson(id),
+                changes = detachedLinks.map { Change.RemoveRelation(it.id) } +
+                        detachedEvents.map { Change.RemoveEvent(it.id) } +
+                        Change.RemovePerson(id),
             )
         }
     }
@@ -88,6 +91,46 @@ data class RemoveRelation(val id: RelationId) : Command {
                 inverse = AddRelation(removed),
                 warnings = emptyList(),
                 changes = listOf(Change.RemoveRelation(id)),
+            )
+        }
+    }
+}
+
+data class AddEvent(val event: Event) : Command {
+    override fun applyTo(tree: FamilyTree): Outcome<CommandResult> =
+        tree.addEvent(event).map {
+            CommandResult(
+                tree = it,
+                inverse = RemoveEvent(event.id),
+                warnings = emptyList(),
+                changes = listOf(Change.AddEvent(event)),
+            )
+        }
+}
+
+data class UpdateEvent(val event: Event) : Command {
+    override fun applyTo(tree: FamilyTree): Outcome<CommandResult> {
+        val previous = tree.event(event.id) ?: return Outcome.Err(DomainError.Missing.Event(event.id))
+        return tree.updateEvent(event).map {
+            CommandResult(
+                tree = it,
+                inverse = UpdateEvent(previous),
+                warnings = emptyList(),
+                changes = listOf(Change.UpdateEvent(event)),
+            )
+        }
+    }
+}
+
+data class RemoveEvent(val id: EventId) : Command {
+    override fun applyTo(tree: FamilyTree): Outcome<CommandResult> {
+        val removed = tree.event(id) ?: return Outcome.Err(DomainError.Missing.Event(id))
+        return tree.removeEvent(id).map {
+            CommandResult(
+                tree = it,
+                inverse = AddEvent(removed),
+                warnings = emptyList(),
+                changes = listOf(Change.RemoveEvent(id)),
             )
         }
     }

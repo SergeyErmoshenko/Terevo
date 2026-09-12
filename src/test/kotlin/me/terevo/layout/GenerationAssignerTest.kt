@@ -1,12 +1,8 @@
 package me.terevo.layout
 
+import me.terevo.testing.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import me.terevo.testing.graphOf
-import me.terevo.testing.node
-import me.terevo.testing.nodeId
-import me.terevo.testing.parentage
-import me.terevo.testing.union
 
 class GenerationAssignerTest {
 

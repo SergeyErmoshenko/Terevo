@@ -1,12 +1,12 @@
 package me.terevo.persistence
 
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNull
 import kotlinx.datetime.LocalDate
 import me.terevo.domain.model.DatePrecision
 import me.terevo.domain.model.EventDate
 import me.terevo.testing.shouldBeOk
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class EventDateCodecTest {
 

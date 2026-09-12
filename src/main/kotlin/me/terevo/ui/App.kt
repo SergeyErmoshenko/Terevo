@@ -5,12 +5,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
 import androidx.compose.foundation.draganddrop.dragAndDropTarget
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.filled.OpenInNew
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -26,6 +20,8 @@ import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import compose.icons.TablerIcons
+import compose.icons.tablericons.*
 import me.terevo.domain.command.Batch
 import me.terevo.domain.model.Gender
 import me.terevo.domain.model.Media
@@ -36,6 +32,7 @@ import me.terevo.layout.LayoutMode
 import me.terevo.layout.LayoutOptions
 import me.terevo.statistics.Statistics
 import me.terevo.ui.components.SegmentedControl
+import me.terevo.ui.components.TerevoCard
 import me.terevo.ui.kinship.KinshipDialog
 import me.terevo.ui.kinship.KinshipDialogState
 import me.terevo.ui.person.*
@@ -144,13 +141,14 @@ data class AppState(
     val sidebarCollapsed: Boolean = false,
     val personRows: List<me.terevo.ui.persons.PersonRow> = emptyList(),
     val eventRows: List<me.terevo.ui.events.EventRow> = emptyList(),
+    val eventForm: me.terevo.ui.events.EventFormState? = null,
     val personViewOpen: Boolean = false,
 )
 
 sealed interface AppAction {
     data object NewProject : AppAction
     data object OpenProject : AppAction
-    data object ImportGedcom : AppAction
+    data object NewProjectFromGedcom : AppAction
     data object ExportGedcom : AppAction
     data object ConfirmGedcomImport : AppAction
     data object CancelGedcomImport : AppAction
@@ -208,6 +206,12 @@ sealed interface AppAction {
     data class RemovePendingPersonMedia(val path: String) : AppAction
     data class ViewPerson(val id: me.terevo.domain.model.PersonId) : AppAction
     data object ClosePersonView : AppAction
+    data object AddEvent : AppAction
+    data class EditEvent(val id: me.terevo.domain.model.EventId) : AppAction
+    data class DeleteEvent(val id: me.terevo.domain.model.EventId) : AppAction
+    data class UpdateEventForm(val form: me.terevo.ui.events.EventFormState) : AppAction
+    data object SaveEvent : AppAction
+    data object CancelEvent : AppAction
 }
 
 data class EmptyProjectAction(
@@ -218,6 +222,7 @@ data class EmptyProjectAction(
 val emptyProjectActions: List<EmptyProjectAction> = listOf(
     EmptyProjectAction(Strings.NEW_PROJECT, AppAction.NewProject),
     EmptyProjectAction(Strings.OPEN_PROJECT, AppAction.OpenProject),
+    EmptyProjectAction(Strings.IMPORT_GEDCOM, AppAction.NewProjectFromGedcom),
 )
 
 @Composable
@@ -230,28 +235,40 @@ fun App(
     val colors = TerevoTheme.colors
     Surface(modifier = modifier.fillMaxSize(), color = colors.canvas, contentColor = colors.textPrimary) {
         Column(Modifier.fillMaxSize()) {
-            SegmentedControl(
-                options = MainTab.entries,
-                selected = state.mainTab,
-                label = { it.label },
-                onSelect = { onAction(AppAction.ChangeMainTab(it)) },
-                modifier = Modifier.padding(spacing.small),
-            )
+            if (state.isProjectOpen) {
+                SegmentedControl(
+                    options = MainTab.entries,
+                    selected = state.mainTab,
+                    label = { it.label },
+                    onSelect = { onAction(AppAction.ChangeMainTab(it)) },
+                    modifier = Modifier.padding(spacing.small),
+                )
+            }
             Box(Modifier.weight(1f).fillMaxWidth()) {
-                when (state.mainTab) {
-                    MainTab.TREE -> MainTreeTab(state, onAction)
-                    MainTab.PERSONS -> me.terevo.ui.persons.PersonsScreen(
-                        rows = state.personRows,
-                        onSelect = { onAction(AppAction.ViewPerson(it)) },
-                        onEdit = {
-                            onAction(AppAction.SelectPerson(it))
-                            onAction(AppAction.EditPerson)
-                        },
-                        onAddPerson = { onAction(AppAction.AddPerson) },
-                    )
+                if (!state.isProjectOpen) {
+                    MainTreeTab(state, onAction)
+                } else {
+                    when (state.mainTab) {
+                        MainTab.TREE -> MainTreeTab(state, onAction)
+                        MainTab.PERSONS -> me.terevo.ui.persons.PersonsScreen(
+                            rows = state.personRows,
+                            onSelect = { onAction(AppAction.ViewPerson(it)) },
+                            onEdit = {
+                                onAction(AppAction.SelectPerson(it))
+                                onAction(AppAction.EditPerson)
+                            },
+                            onAddPerson = { onAction(AppAction.AddPerson) },
+                        )
 
-                    MainTab.EVENTS -> me.terevo.ui.events.EventsScreen(state.eventRows)
-                    MainTab.DOCUMENTS -> me.terevo.ui.documents.DocumentsScreen(state, onAction)
+                        MainTab.EVENTS -> me.terevo.ui.events.EventsScreen(
+                            rows = state.eventRows,
+                            onAddEvent = { onAction(AppAction.AddEvent) },
+                            onEditEvent = { onAction(AppAction.EditEvent(it)) },
+                            onDeleteEvent = { onAction(AppAction.DeleteEvent(it)) },
+                        )
+
+                        MainTab.DOCUMENTS -> me.terevo.ui.documents.DocumentsScreen(state, onAction)
+                    }
                 }
             }
             Box(
@@ -277,6 +294,14 @@ fun App(
             onChooseMedia = { onAction(AppAction.ChoosePersonFormMedia) },
             onDropMedia = { onAction(AppAction.DropPersonFormMedia(it)) },
             onRemovePendingMedia = { onAction(AppAction.RemovePendingPersonMedia(it)) },
+        )
+    }
+    state.eventForm?.let { form ->
+        me.terevo.ui.events.EventFormDialog(
+            state = form,
+            onChange = { onAction(AppAction.UpdateEventForm(it)) },
+            onSave = { onAction(AppAction.SaveEvent) },
+            onCancel = { onAction(AppAction.CancelEvent) },
         )
     }
     if (state.personViewOpen) {
@@ -394,7 +419,7 @@ fun App(
                                 enabled = page > 0,
                             ) {
                                 Icon(
-                                    Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                                    TablerIcons.ChevronLeft,
                                     contentDescription = Strings.PREVIOUS_PAGE
                                 )
                             }
@@ -404,7 +429,7 @@ fun App(
                                 enabled = page < pageCount - 1,
                             ) {
                                 Icon(
-                                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                    TablerIcons.ChevronRight,
                                     contentDescription = Strings.NEXT_PAGE
                                 )
                             }
@@ -483,9 +508,9 @@ private fun MainTreeTab(state: AppState, onAction: (AppAction) -> Unit) {
                     ) {
                         Icon(
                             if (state.sidebarCollapsed) {
-                                Icons.AutoMirrored.Filled.KeyboardArrowRight
+                                TablerIcons.ChevronRight
                             } else {
-                                Icons.AutoMirrored.Filled.KeyboardArrowLeft
+                                TablerIcons.ChevronLeft
                             },
                             contentDescription = if (state.sidebarCollapsed) Strings.EXPAND_SIDEBAR else Strings.COLLAPSE_SIDEBAR,
                         )
@@ -497,7 +522,7 @@ private fun MainTreeTab(state: AppState, onAction: (AppAction) -> Unit) {
                 ) {
                     if (!state.isProjectOpen) {
                         Icon(
-                            Icons.Filled.FolderOpen,
+                            TablerIcons.Folder,
                             contentDescription = null,
                             tint = colors.textSecondary,
                             modifier = Modifier.size(EMPTY_STATE_ICON_SIZE.dp),
@@ -510,17 +535,20 @@ private fun MainTreeTab(state: AppState, onAction: (AppAction) -> Unit) {
                             OutlinedButton(onClick = { onAction(emptyProjectActions[1].action) }) {
                                 Text(emptyProjectActions[1].label)
                             }
+                            OutlinedButton(onClick = { onAction(emptyProjectActions[2].action) }) {
+                                Text(emptyProjectActions[2].label)
+                            }
                         }
                     } else if (state.personCount == 0) {
                         Icon(
-                            Icons.Filled.AccountTree,
+                            TablerIcons.Sitemap,
                             contentDescription = null,
                             tint = colors.textSecondary,
                             modifier = Modifier.size(EMPTY_STATE_ICON_SIZE.dp),
                         )
                         Text(Strings.EMPTY_TREE, color = colors.textSecondary)
                         Button(onClick = { onAction(AppAction.AddPerson) }) {
-                            Icon(Icons.Filled.PersonAdd, contentDescription = null)
+                            Icon(TablerIcons.UserPlus, contentDescription = null)
                             Text(Strings.ADD_PERSON, modifier = Modifier.padding(start = spacing.small))
                         }
                     }
@@ -539,7 +567,7 @@ private fun MainTreeTab(state: AppState, onAction: (AppAction) -> Unit) {
                             .align(Alignment.BottomEnd)
                             .padding(spacing.medium),
                     ) {
-                        Icon(Icons.Filled.MyLocation, contentDescription = Strings.FIT_TO_SCREEN)
+                        Icon(TablerIcons.Crosshair, contentDescription = Strings.FIT_TO_SCREEN)
                     }
                     state.dragRelationMenu?.let { menu ->
                         DragRelationMenu(
@@ -558,8 +586,6 @@ private fun MainTreeTab(state: AppState, onAction: (AppAction) -> Unit) {
 private fun ProjectSidebar(state: AppState, onAction: (AppAction) -> Unit) {
     val spacing = TerevoTheme.spacing
     val colors = TerevoTheme.colors
-    val sectionColors = CardDefaults.cardColors(containerColor = colors.surfaceVariant)
-    val sectionElevation = CardDefaults.cardElevation(defaultElevation = spacing.extraSmall)
     Column(
         modifier = Modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(spacing.small),
@@ -567,21 +593,20 @@ private fun ProjectSidebar(state: AppState, onAction: (AppAction) -> Unit) {
         Text("${Strings.PROJECT}: ${state.projectName}")
         Text("${Strings.PEOPLE}: ${state.personCount}")
         Button(onClick = { onAction(AppAction.AddPerson) }, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.Filled.PersonAdd, contentDescription = null)
+            Icon(TablerIcons.UserPlus, contentDescription = null)
             Text(Strings.ADD_PERSON, modifier = Modifier.padding(start = spacing.small))
         }
-        Card(
-            colors = sectionColors,
-            elevation = sectionElevation,
-            shape = RoundedCornerShape(spacing.cornerRadius),
-            border = BorderStroke(1.dp, colors.outline),
-        ) {
+        OutlinedButton(onClick = { onAction(AppAction.ExportGedcom) }, modifier = Modifier.fillMaxWidth()) {
+            Icon(TablerIcons.FileExport, contentDescription = null)
+            Text(Strings.EXPORT_GEDCOM, modifier = Modifier.padding(start = spacing.small))
+        }
+        TerevoCard {
             Column(
                 modifier = Modifier.padding(spacing.small),
                 verticalArrangement = Arrangement.spacedBy(spacing.small),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.FilterList, contentDescription = null, tint = colors.accent)
+                    Icon(TablerIcons.Filter, contentDescription = null, tint = colors.accent)
                     Text(
                         Strings.SEARCH_FILTERS,
                         modifier = Modifier.padding(start = spacing.small),
@@ -592,7 +617,7 @@ private fun ProjectSidebar(state: AppState, onAction: (AppAction) -> Unit) {
                     value = state.searchFilter.query,
                     onValueChange = { onAction(AppAction.ChangeSearchFilter(state.searchFilter.copy(query = it))) },
                     label = { Text(Strings.SEARCH) },
-                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                    leadingIcon = { Icon(TablerIcons.Search, contentDescription = null) },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
@@ -699,18 +724,13 @@ private fun ProjectSidebar(state: AppState, onAction: (AppAction) -> Unit) {
                 }
             }
         }
-        Card(
-            colors = sectionColors,
-            elevation = sectionElevation,
-            shape = RoundedCornerShape(spacing.cornerRadius),
-            border = BorderStroke(1.dp, colors.outline),
-        ) {
+        TerevoCard {
             Column(
                 modifier = Modifier.padding(spacing.small),
                 verticalArrangement = Arrangement.spacedBy(spacing.small),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.AccountTree, contentDescription = null, tint = colors.accent)
+                    Icon(TablerIcons.Sitemap, contentDescription = null, tint = colors.accent)
                     Text(
                         Strings.TREE_MODE,
                         modifier = Modifier.padding(start = spacing.small),
@@ -739,17 +759,6 @@ private fun ProjectSidebar(state: AppState, onAction: (AppAction) -> Unit) {
                     enabled = state.layoutDepth != Int.MAX_VALUE,
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text(Strings.TREE_UNLIMITED, maxLines = 1) }
-                Text(
-                    Strings.LAYOUT_DIRECTION,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = colors.textSecondary
-                )
-                SegmentedControl(
-                    options = LayoutDirection.entries,
-                    selected = state.layoutDirection,
-                    label = { it.label },
-                    onSelect = { onAction(AppAction.ChangeLayoutDirection(it)) },
-                )
                 Text(Strings.LAYOUT_DENSITY, style = MaterialTheme.typography.labelLarge, color = colors.textSecondary)
                 SegmentedControl(
                     options = LayoutDensity.entries,
@@ -761,12 +770,7 @@ private fun ProjectSidebar(state: AppState, onAction: (AppAction) -> Unit) {
         }
         val person = state.selectedPerson ?: return@Column
         HorizontalDivider()
-        Card(
-            colors = sectionColors,
-            elevation = sectionElevation,
-            shape = RoundedCornerShape(spacing.cornerRadius),
-            border = BorderStroke(1.dp, colors.outline),
-        ) {
+        TerevoCard {
             Column(
                 modifier = Modifier.padding(spacing.small),
                 verticalArrangement = Arrangement.spacedBy(spacing.small),
@@ -775,42 +779,37 @@ private fun ProjectSidebar(state: AppState, onAction: (AppAction) -> Unit) {
                 Text(person.lifeSpan.displayText(), color = colors.textSecondary)
                 Row(horizontalArrangement = Arrangement.spacedBy(spacing.small)) {
                     OutlinedButton(onClick = { onAction(AppAction.EditPerson) }) {
-                        Icon(Icons.Filled.Edit, contentDescription = null)
+                        Icon(TablerIcons.Edit, contentDescription = null)
                         Text(Strings.EDIT_PERSON, modifier = Modifier.padding(start = spacing.small))
                     }
                     OutlinedButton(onClick = { onAction(AppAction.DeletePerson) }) {
-                        Icon(Icons.Filled.Delete, contentDescription = null, tint = colors.error)
+                        Icon(TablerIcons.Trash, contentDescription = null, tint = colors.error)
                         Text(Strings.DELETE_PERSON, modifier = Modifier.padding(start = spacing.small))
                     }
                 }
                 Button(onClick = { onAction(AppAction.AddParent) }, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Filled.ArrowUpward, contentDescription = null)
+                    Icon(TablerIcons.ArrowUp, contentDescription = null)
                     Text(Strings.ADD_PARENT, modifier = Modifier.padding(start = spacing.small))
                 }
                 Button(onClick = { onAction(AppAction.AddChild) }, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Filled.ArrowDownward, contentDescription = null)
+                    Icon(TablerIcons.ArrowDown, contentDescription = null)
                     Text(Strings.ADD_CHILD, modifier = Modifier.padding(start = spacing.small))
                 }
                 Button(onClick = { onAction(AppAction.AddSpouse) }, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Filled.Favorite, contentDescription = null)
+                    Icon(TablerIcons.Heart, contentDescription = null)
                     Text(person.gender.spouseActionLabel(), modifier = Modifier.padding(start = spacing.small))
                 }
                 OutlinedButton(
                     onClick = { onAction(AppAction.OpenKinshipDialog) },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(Icons.Filled.AccountTree, contentDescription = null)
+                    Icon(TablerIcons.Sitemap, contentDescription = null)
                     Text(Strings.DETERMINE_KINSHIP, modifier = Modifier.padding(start = spacing.small))
                 }
             }
         }
         HorizontalDivider()
-        Card(
-            colors = sectionColors,
-            elevation = sectionElevation,
-            shape = RoundedCornerShape(spacing.cornerRadius),
-            border = BorderStroke(1.dp, colors.outline),
-        ) {
+        TerevoCard {
             val mediaDropTarget = object : DragAndDropTarget {
                 @OptIn(ExperimentalComposeUiApi::class)
                 override fun onDrop(event: DragAndDropEvent): Boolean {
@@ -830,7 +829,7 @@ private fun ProjectSidebar(state: AppState, onAction: (AppAction) -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(spacing.small),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.AttachFile, contentDescription = null, tint = colors.accent)
+                    Icon(TablerIcons.Paperclip, contentDescription = null, tint = colors.accent)
                     Text(
                         Strings.MEDIA,
                         modifier = Modifier.padding(start = spacing.small),
@@ -838,18 +837,18 @@ private fun ProjectSidebar(state: AppState, onAction: (AppAction) -> Unit) {
                     )
                 }
                 OutlinedButton(onClick = { onAction(AppAction.ChooseMedia) }, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Filled.AttachFile, contentDescription = null)
+                    Icon(TablerIcons.Paperclip, contentDescription = null)
                     Text(Strings.ADD_MEDIA, modifier = Modifier.padding(start = spacing.small))
                 }
                 state.selectedMedia.forEach { media ->
                     Text(media.fileName)
                     Row(horizontalArrangement = Arrangement.spacedBy(spacing.small)) {
                         OutlinedButton(onClick = { onAction(AppAction.OpenMedia(media.id)) }) {
-                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
+                            Icon(TablerIcons.ExternalLink, contentDescription = null)
                             Text(Strings.OPEN_MEDIA, modifier = Modifier.padding(start = spacing.small))
                         }
                         OutlinedButton(onClick = { onAction(AppAction.RemoveMedia(media.id)) }) {
-                            Icon(Icons.Filled.Delete, contentDescription = null, tint = colors.error)
+                            Icon(TablerIcons.Trash, contentDescription = null, tint = colors.error)
                             Text(Strings.REMOVE_MEDIA, modifier = Modifier.padding(start = spacing.small))
                         }
                     }
@@ -879,12 +878,6 @@ private val LayoutMode.label: String
         LayoutMode.WHOLE_FAMILY -> Strings.TREE_WHOLE_FAMILY
     }
 
-private val LayoutDirection.label: String
-    get() = when (this) {
-        LayoutDirection.TOP_DOWN -> Strings.DIRECTION_TOP_DOWN
-        LayoutDirection.LEFT_RIGHT -> Strings.DIRECTION_LEFT_RIGHT
-    }
-
 private val LayoutDensity.label: String
     get() = when (this) {
         LayoutDensity.COMPACT -> Strings.DENSITY_COMPACT
@@ -909,12 +902,7 @@ private fun RelatedPeople(
     val spacing = TerevoTheme.spacing
     val colors = TerevoTheme.colors
     HorizontalDivider()
-    Card(
-        colors = CardDefaults.cardColors(containerColor = colors.surfaceVariant),
-        elevation = CardDefaults.cardElevation(defaultElevation = spacing.extraSmall),
-        shape = RoundedCornerShape(spacing.cornerRadius),
-        border = BorderStroke(1.dp, colors.outline),
-    ) {
+    TerevoCard {
         Column(
             modifier = Modifier.padding(spacing.small),
             verticalArrangement = Arrangement.spacedBy(spacing.small),

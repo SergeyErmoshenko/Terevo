@@ -45,7 +45,18 @@ class SqlDelightTreeRepository(private val database: TerevoDatabase) : TreeRepos
             }
         }
 
-        FamilyTree.of(persons, relations)
+        val participantsByEvent = database.eventQueries.selectAllParticipants().executeAsList()
+            .groupBy { it.event_id }
+        val events = mutableListOf<Event>()
+        for (row in database.eventQueries.selectAll().executeAsList()) {
+            val mapped = EventMapper.toDomain(row, participantsByEvent[row.id].orEmpty())
+            when (mapped) {
+                is Outcome.Ok -> events.add(mapped.value)
+                is Outcome.Err -> return@guarded mapped
+            }
+        }
+
+        FamilyTree.of(persons, relations, events)
     }
 
     override fun apply(changes: List<Change>): Outcome<Unit> = guarded {
@@ -57,6 +68,9 @@ class SqlDelightTreeRepository(private val database: TerevoDatabase) : TreeRepos
                     is Change.RemovePerson -> database.personQueries.delete(change.id.toString())
                     is Change.AddRelation -> writeRelation(change.relation)
                     is Change.RemoveRelation -> deleteRelation(change.id.toString())
+                    is Change.AddEvent -> insertEvent(change.event)
+                    is Change.UpdateEvent -> updateEvent(change.event)
+                    is Change.RemoveEvent -> database.eventQueries.delete(change.id.toString())
                 }
             }
         }
@@ -184,6 +198,52 @@ class SqlDelightTreeRepository(private val database: TerevoDatabase) : TreeRepos
     private fun deleteRelation(id: String) {
         database.parentChildQueries.delete(id)
         database.marriageQueries.delete(id)
+    }
+
+    private fun insertEvent(event: Event) {
+        val columns = EventMapper.toColumns(event)
+        database.eventQueries.insert(
+            id = columns.id,
+            type = columns.type,
+            date_kind = columns.date.kind,
+            date_value = columns.date.value,
+            date_end = columns.date.end,
+            date_precision = columns.date.precision,
+            place = columns.place,
+            place_latitude = columns.placeLatitude,
+            place_longitude = columns.placeLongitude,
+            notes = columns.notes,
+        )
+        writeParticipants(event, columns.id)
+    }
+
+    private fun updateEvent(event: Event) {
+        val columns = EventMapper.toColumns(event)
+        database.eventQueries.update(
+            type = columns.type,
+            date_kind = columns.date.kind,
+            date_value = columns.date.value,
+            date_end = columns.date.end,
+            date_precision = columns.date.precision,
+            place = columns.place,
+            place_latitude = columns.placeLatitude,
+            place_longitude = columns.placeLongitude,
+            notes = columns.notes,
+            id = columns.id,
+        )
+        writeParticipants(event, columns.id)
+    }
+
+    private fun writeParticipants(event: Event, id: String) {
+        database.eventQueries.deleteParticipantsByEvent(id)
+        event.participants.forEachIndexed { position, participant ->
+            database.eventQueries.insertParticipant(
+                event_id = id,
+                person_id = participant.personId.toString(),
+                role = participant.role,
+                position = position.toLong(),
+            )
+        }
     }
 
     private fun <T> guarded(block: () -> Outcome<T>): Outcome<T> = try {

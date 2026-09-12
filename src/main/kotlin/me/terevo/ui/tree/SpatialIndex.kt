@@ -1,11 +1,7 @@
 package me.terevo.ui.tree
 
+import me.terevo.layout.*
 import kotlin.math.floor
-import me.terevo.layout.EdgePath
-import me.terevo.layout.Layout
-import me.terevo.layout.NodeId
-import me.terevo.layout.Point
-import me.terevo.layout.Rect
 
 data class VisibleLayout(
     val nodes: Map<NodeId, Rect>,

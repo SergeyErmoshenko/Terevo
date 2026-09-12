@@ -1,16 +1,12 @@
 package me.terevo.persistence
 
-import java.nio.file.Files
-import java.nio.file.Path
-import kotlin.io.path.createTempDirectory
-import kotlin.test.AfterTest
-import kotlin.test.BeforeTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 import me.terevo.domain.port.ProjectLocation
 import me.terevo.domain.port.UserSettings
 import me.terevo.testing.shouldBeOk
+import java.nio.file.Files
+import java.nio.file.Path
+import kotlin.io.path.createTempDirectory
+import kotlin.test.*
 
 class JsonSettingsStoreTest {
 

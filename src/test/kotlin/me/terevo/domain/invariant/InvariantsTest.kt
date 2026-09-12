@@ -1,18 +1,14 @@
 package me.terevo.domain.invariant
 
+import me.terevo.domain.DomainError
+import me.terevo.domain.model.*
+import me.terevo.testing.person
+import me.terevo.testing.shouldBeErr
+import me.terevo.testing.shouldBeOk
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import me.terevo.domain.DomainError
-import me.terevo.domain.model.FamilyTree
-import me.terevo.domain.model.Marriage
-import me.terevo.domain.model.ParentChild
-import me.terevo.domain.model.ParentKind
-import me.terevo.domain.model.Person
-import me.terevo.testing.person
-import me.terevo.testing.shouldBeErr
-import me.terevo.testing.shouldBeOk
 
 class InvariantsTest {
 

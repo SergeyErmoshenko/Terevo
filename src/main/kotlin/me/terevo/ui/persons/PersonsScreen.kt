@@ -7,14 +7,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.PersonAdd
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,6 +14,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import compose.icons.TablerIcons
+import compose.icons.tablericons.*
 import me.terevo.domain.model.Gender
 import me.terevo.domain.model.PersonId
 import me.terevo.ui.Strings
@@ -99,11 +93,11 @@ fun PersonsScreen(
                 value = query,
                 onValueChange = { query = it },
                 label = { Text(Strings.SEARCH) },
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                leadingIcon = { Icon(TablerIcons.Search, contentDescription = null) },
                 modifier = Modifier.weight(1f),
             )
             Button(onClick = onAddPerson) {
-                Icon(Icons.Filled.PersonAdd, contentDescription = null)
+                Icon(TablerIcons.UserPlus, contentDescription = null)
                 Text(Strings.ADD_PERSON, modifier = Modifier.padding(start = spacing.small))
             }
         }
@@ -150,7 +144,7 @@ private fun RowScope.SortableHeaderCell(
         )
         if (sortState.column == column) {
             Icon(
-                imageVector = if (sortState.ascending) Icons.Filled.ArrowUpward else Icons.Filled.ArrowDownward,
+                imageVector = if (sortState.ascending) TablerIcons.ArrowUp else TablerIcons.ArrowDown,
                 contentDescription = null,
                 tint = colors.textSecondary,
                 modifier = Modifier.size(14.dp).padding(start = 2.dp),
@@ -201,11 +195,11 @@ private fun PersonRowItem(row: PersonRow, onSelect: (PersonId) -> Unit, onEdit: 
         Text(row.comment, modifier = Modifier.weight(1.5f))
         Box(modifier = Modifier.weight(0.6f)) {
             if (row.alive) {
-                Icon(Icons.Filled.Check, contentDescription = Strings.IS_ALIVE, tint = colors.accent)
+                Icon(TablerIcons.Check, contentDescription = Strings.IS_ALIVE, tint = colors.accent)
             }
         }
         IconButton(onClick = { onEdit(row.id) }, modifier = Modifier.size(40.dp)) {
-            Icon(Icons.Filled.Edit, contentDescription = Strings.EDIT_PERSON)
+            Icon(TablerIcons.Edit, contentDescription = Strings.EDIT_PERSON)
         }
     }
 }
@@ -225,7 +219,7 @@ private fun PersonThumbnail(path: String?, tint: androidx.compose.ui.graphics.Co
                 modifier = Modifier.fillMaxSize().clip(CircleShape),
             )
         } else {
-            Icon(Icons.Filled.Person, contentDescription = null, tint = MaterialTheme.colorScheme.surface)
+            Icon(TablerIcons.User, contentDescription = null, tint = TerevoTheme.colors.textPrimary)
         }
     }
 }

@@ -1,5 +1,12 @@
 package me.terevo.persistence
 
+import me.terevo.domain.DomainError
+import me.terevo.domain.Outcome
+import me.terevo.domain.model.Media
+import me.terevo.domain.model.MediaId
+import me.terevo.domain.port.MediaRepository
+import me.terevo.domain.port.ProjectLocation
+import me.terevo.persistence.db.TerevoDatabase
 import java.awt.RenderingHints
 import java.awt.image.BufferedImage
 import java.io.IOException
@@ -9,13 +16,6 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import javax.imageio.ImageIO
-import me.terevo.domain.DomainError
-import me.terevo.domain.Outcome
-import me.terevo.domain.model.Media
-import me.terevo.domain.model.MediaId
-import me.terevo.domain.port.MediaRepository
-import me.terevo.domain.port.ProjectLocation
-import me.terevo.persistence.db.TerevoDatabase
 
 class ProjectMediaRepository(
     private val database: TerevoDatabase,

@@ -1,12 +1,12 @@
 package me.terevo.export
 
+import me.terevo.testing.largeFamilyTree
+import org.apache.pdfbox.Loader
+import org.apache.pdfbox.text.PDFTextStripper
 import java.nio.file.Files
 import kotlin.io.path.createTempFile
 import kotlin.test.Test
 import kotlin.test.assertTrue
-import me.terevo.testing.largeFamilyTree
-import org.apache.pdfbox.Loader
-import org.apache.pdfbox.text.PDFTextStripper
 
 class PdfFilesTest {
 

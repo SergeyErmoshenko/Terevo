@@ -1,10 +1,5 @@
 package me.terevo.ui.export
 
-import java.nio.file.Files
-import javax.imageio.ImageIO
-import kotlin.io.path.createTempFile
-import kotlin.test.Test
-import kotlin.test.assertEquals
 import me.terevo.domain.Outcome
 import me.terevo.layout.Layout
 import me.terevo.layout.NodeId
@@ -13,6 +8,11 @@ import me.terevo.ui.theme.LightColors
 import me.terevo.ui.tree.PersonVisual
 import me.terevo.ui.tree.PersonVisualGender
 import me.terevo.ui.tree.TreeVisuals
+import java.nio.file.Files
+import javax.imageio.ImageIO
+import kotlin.io.path.createTempFile
+import kotlin.test.Test
+import kotlin.test.assertEquals
 
 class PngExporterTest {
 

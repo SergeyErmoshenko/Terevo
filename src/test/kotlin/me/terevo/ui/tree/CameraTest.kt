@@ -1,10 +1,10 @@
 package me.terevo.ui.tree
 
-import kotlin.test.Test
-import kotlin.test.assertEquals
 import me.terevo.layout.Point
 import me.terevo.layout.Rect
 import me.terevo.layout.Size
+import kotlin.test.Test
+import kotlin.test.assertEquals
 
 class CameraTest {
 

@@ -15,7 +15,6 @@ import androidx.compose.ui.window.MenuBar
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
-import org.jetbrains.skia.Image
 import me.terevo.domain.port.ThemeMode
 import me.terevo.persistence.SqliteProjectService
 import me.terevo.ui.App
@@ -24,6 +23,7 @@ import me.terevo.ui.Strings
 import me.terevo.ui.person.RelationMode
 import me.terevo.ui.theme.TerevoTheme
 import me.terevo.ui.tree.TreeCanvasIntent
+import org.jetbrains.skia.Image
 import java.awt.Frame
 
 fun main() = application {
@@ -44,6 +44,7 @@ fun main() = application {
                     event.key == Key.Escape -> {
                         appState = when {
                             appState.personForm != null -> controller.cancelPerson()
+                            appState.eventForm != null -> controller.cancelEvent()
                             appState.relationDialog != null -> controller.cancelRelation()
                             appState.personViewOpen -> controller.closePersonView()
                             appState.kinshipDialog != null -> controller.closeKinshipDialog()
@@ -79,7 +80,13 @@ fun main() = application {
             when (action) {
                 AppAction.NewProject -> dialogs.chooseCreate()?.let { appState = controller.create(it) }
                 AppAction.OpenProject -> dialogs.chooseOpen()?.let { appState = controller.open(it) }
-                AppAction.ImportGedcom -> dialogs.chooseGedcomImport()?.let { appState = controller.previewGedcom(it) }
+                AppAction.NewProjectFromGedcom -> dialogs.chooseCreate()?.let { location ->
+                    dialogs.chooseGedcomImport()?.let { path ->
+                        appState = controller.create(location)
+                        appState = controller.previewGedcom(path)
+                    }
+                }
+
                 AppAction.ExportGedcom -> dialogs.chooseGedcomExport()?.let { appState = controller.exportGedcom(it) }
                 AppAction.ExportPng -> dialogs.choosePngExport()?.let { appState = controller.exportPng(it) }
                 AppAction.ExportPdf -> dialogs.choosePdfExport()?.let { appState = controller.exportPdf(it) }
@@ -139,6 +146,12 @@ fun main() = application {
                 is AppAction.ChangeThemeMode -> appState = controller.changeThemeMode(action.mode)
                 is AppAction.ChangeMainTab -> appState = controller.changeMainTab(action.tab)
                 AppAction.ToggleSidebar -> appState = controller.toggleSidebar()
+                AppAction.AddEvent -> appState = controller.startAddingEvent()
+                is AppAction.EditEvent -> appState = controller.startEditingEvent(action.id)
+                is AppAction.DeleteEvent -> appState = controller.deleteEvent(action.id)
+                is AppAction.UpdateEventForm -> appState = controller.updateEventForm(action.form)
+                AppAction.SaveEvent -> appState = controller.saveEvent()
+                AppAction.CancelEvent -> appState = controller.cancelEvent()
             }
         }
         MenuBar {
@@ -151,10 +164,6 @@ fun main() = application {
                     Strings.OPEN_PROJECT,
                     shortcut = KeyShortcut(Key.O, meta = true),
                     onClick = { onAction(AppAction.OpenProject) })
-                Item(
-                    Strings.IMPORT_GEDCOM,
-                    enabled = appState.isProjectOpen,
-                    onClick = { onAction(AppAction.ImportGedcom) })
                 Item(
                     Strings.EXPORT_GEDCOM,
                     enabled = appState.isProjectOpen,

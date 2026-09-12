@@ -1,19 +1,10 @@
 package me.terevo.ui.person
 
 import kotlinx.datetime.LocalDate
+import me.terevo.domain.model.*
+import me.terevo.testing.shouldBeOk
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import me.terevo.domain.model.EventDate
-import me.terevo.domain.model.FamilyTree
-import me.terevo.domain.model.Gender
-import me.terevo.domain.model.LifeSpan
-import me.terevo.domain.model.ParentChild
-import me.terevo.domain.model.ParentKind
-import me.terevo.domain.model.Person
-import me.terevo.domain.model.PersonName
-import me.terevo.domain.model.Place
-import me.terevo.domain.model.RelationId
-import me.terevo.testing.shouldBeOk
 
 class PersonSearchTest {
 

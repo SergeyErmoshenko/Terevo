@@ -4,8 +4,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.todayIn
 import me.terevo.domain.DomainError
 import me.terevo.domain.Outcome
-import me.terevo.domain.command.CommandBus
-import me.terevo.domain.command.UpdatePerson
+import me.terevo.domain.command.*
 import me.terevo.domain.model.*
 import me.terevo.domain.port.*
 import me.terevo.export.PdfFiles
@@ -19,6 +18,9 @@ import me.terevo.layout.Point
 import me.terevo.persistence.JsonSettingsStore
 import me.terevo.statistics.TreeStatistics
 import me.terevo.ui.*
+import me.terevo.ui.events.EventFormState
+import me.terevo.ui.events.toEvent
+import me.terevo.ui.events.validateEventForm
 import me.terevo.ui.export.exportTreePng
 import me.terevo.ui.kinship.KinshipDialogState
 import me.terevo.ui.person.*
@@ -592,6 +594,57 @@ class AppController(
 
     fun keepEditingPerson(): AppState {
         state = state.copy(personForm = state.personForm?.copy(isDiscardConfirmationVisible = false))
+        return state
+    }
+
+    fun startAddingEvent(): AppState {
+        val tree = commandBus?.tree?.value ?: return state
+        state = state.copy(eventForm = EventFormState(people = tree.persons.values.toList()))
+        return state
+    }
+
+    fun startEditingEvent(id: EventId): AppState {
+        val tree = commandBus?.tree?.value ?: return state
+        val event = tree.event(id) ?: return state
+        state = state.copy(eventForm = EventFormState.fromEvent(event, tree.persons.values.toList()))
+        return state
+    }
+
+    fun updateEventForm(form: EventFormState): AppState {
+        state = state.copy(eventForm = validateEventForm(form))
+        return state
+    }
+
+    fun cancelEvent(): AppState {
+        state = state.copy(eventForm = null)
+        return state
+    }
+
+    fun saveEvent(): AppState {
+        val form = state.eventForm ?: return state
+        val bus = commandBus ?: return state
+        val event = when (val result = form.toEvent()) {
+            is Outcome.Ok -> result.value
+            is Outcome.Err -> return state.copy(eventForm = form.copy(blockingError = "Не удалось сохранить событие"))
+        }
+        val command = if (form.original == null) AddEvent(event) else UpdateEvent(event)
+        state = when (bus.execute(command)) {
+            is Outcome.Ok -> remapTree(bus.tree.value, state.selectedPerson?.id).copy(
+                eventForm = null,
+                status = "Событие сохранено",
+            )
+
+            is Outcome.Err -> state.copy(eventForm = form.copy(blockingError = "Не удалось сохранить событие"))
+        }
+        return state
+    }
+
+    fun deleteEvent(id: EventId): AppState {
+        val bus = commandBus ?: return state
+        state = when (bus.execute(RemoveEvent(id))) {
+            is Outcome.Ok -> remapTree(bus.tree.value, state.selectedPerson?.id).copy(status = "Событие удалено")
+            is Outcome.Err -> state.copy(status = "Не удалось удалить событие")
+        }
         return state
     }
 

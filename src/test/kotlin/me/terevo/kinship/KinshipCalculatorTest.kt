@@ -1,17 +1,11 @@
 package me.terevo.kinship
 
+import me.terevo.domain.model.*
+import me.terevo.testing.person
+import me.terevo.testing.shouldBeOk
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
-import me.terevo.domain.model.FamilyTree
-import me.terevo.domain.model.Gender
-import me.terevo.domain.model.Marriage
-import me.terevo.domain.model.ParentChild
-import me.terevo.domain.model.ParentKind
-import me.terevo.domain.model.Person
-import me.terevo.domain.model.PersonId
-import me.terevo.testing.person
-import me.terevo.testing.shouldBeOk
 
 class KinshipCalculatorTest {
 

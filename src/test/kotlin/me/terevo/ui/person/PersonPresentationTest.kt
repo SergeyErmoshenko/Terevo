@@ -1,11 +1,11 @@
 package me.terevo.ui.person
 
 import kotlinx.datetime.LocalDate
-import kotlin.test.Test
-import kotlin.test.assertEquals
 import me.terevo.domain.model.EventDate
 import me.terevo.domain.model.LifeSpan
 import me.terevo.testing.shouldBeOk
+import kotlin.test.Test
+import kotlin.test.assertEquals
 
 class PersonPresentationTest {
 

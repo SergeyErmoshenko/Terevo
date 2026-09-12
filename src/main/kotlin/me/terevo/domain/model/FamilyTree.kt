@@ -2,6 +2,7 @@ package me.terevo.domain.model
 
 import kotlinx.collections.immutable.PersistentMap
 import kotlinx.collections.immutable.persistentMapOf
+import kotlinx.collections.immutable.toPersistentMap
 import me.terevo.domain.DomainError
 import me.terevo.domain.Outcome
 import me.terevo.domain.invariant.Change
@@ -10,6 +11,7 @@ import me.terevo.domain.invariant.Invariants
 class FamilyTree private constructor(
     val persons: PersistentMap<PersonId, Person>,
     val relations: PersistentMap<RelationId, Relation>,
+    val events: PersistentMap<EventId, Event>,
     private val index: TreeIndex,
 ) {
     val size: Int get() = persons.size
@@ -17,6 +19,8 @@ class FamilyTree private constructor(
     fun person(id: PersonId): Person? = persons[id]
 
     fun relation(id: RelationId): Relation? = relations[id]
+
+    fun event(id: EventId): Event? = events[id]
 
     fun contains(id: PersonId): Boolean = persons.containsKey(id)
 
@@ -70,23 +74,25 @@ class FamilyTree private constructor(
         if (contains(person.id)) {
             Outcome.Err(DomainError.Tree.PersonAlreadyExists(person.id))
         } else {
-            Outcome.Ok(FamilyTree(persons.put(person.id, person), relations, index))
+            Outcome.Ok(FamilyTree(persons.put(person.id, person), relations, events, index))
         }
 
     fun updatePerson(person: Person): Outcome<FamilyTree> =
         if (!contains(person.id)) {
             Outcome.Err(DomainError.Missing.Person(person.id))
         } else {
-            Outcome.Ok(FamilyTree(persons.put(person.id, person), relations, index))
+            Outcome.Ok(FamilyTree(persons.put(person.id, person), relations, events, index))
         }
 
     fun removePerson(id: PersonId): Outcome<FamilyTree> {
         if (!contains(id)) return Outcome.Err(DomainError.Missing.Person(id))
         val detached = relationsOf(id).fold(this) { tree, relation -> tree.withoutRelation(relation) }
+        val remainingEvents = detached.events.filterValues { event -> event.participants.none { it.personId == id } }
         return Outcome.Ok(
             FamilyTree(
                 persons = detached.persons.remove(id),
                 relations = detached.relations,
+                events = remainingEvents.toPersistentMap(),
                 index = detached.index.afterPersonRemoved(id),
             ),
         )
@@ -104,6 +110,7 @@ class FamilyTree private constructor(
             FamilyTree(
                 persons = persons,
                 relations = relations.put(relation.id, relation),
+                events = events,
                 index = index.afterRelationAdded(relation),
             ),
         )
@@ -114,19 +121,40 @@ class FamilyTree private constructor(
         return Outcome.Ok(withoutRelation(relation))
     }
 
+    fun addEvent(event: Event): Outcome<FamilyTree> {
+        val missing = event.participants.map { it.personId }.firstOrNull { !contains(it) }
+        if (missing != null) return Outcome.Err(DomainError.Missing.Person(missing))
+        if (events.containsKey(event.id)) return Outcome.Err(DomainError.Tree.EventAlreadyExists(event.id))
+        return Outcome.Ok(FamilyTree(persons, relations, events.put(event.id, event), index))
+    }
+
+    fun updateEvent(event: Event): Outcome<FamilyTree> {
+        if (!events.containsKey(event.id)) return Outcome.Err(DomainError.Missing.Event(event.id))
+        val missing = event.participants.map { it.personId }.firstOrNull { !contains(it) }
+        if (missing != null) return Outcome.Err(DomainError.Missing.Person(missing))
+        return Outcome.Ok(FamilyTree(persons, relations, events.put(event.id, event), index))
+    }
+
+    fun removeEvent(id: EventId): Outcome<FamilyTree> {
+        if (!events.containsKey(id)) return Outcome.Err(DomainError.Missing.Event(id))
+        return Outcome.Ok(FamilyTree(persons, relations, events.remove(id), index))
+    }
+
     private fun withoutRelation(relation: Relation): FamilyTree =
         FamilyTree(
             persons = persons,
             relations = relations.remove(relation.id),
+            events = events,
             index = index.afterRelationRemoved(relation),
         )
 
     override fun equals(other: Any?): Boolean =
-        other is FamilyTree && persons == other.persons && relations == other.relations
+        other is FamilyTree && persons == other.persons && relations == other.relations && events == other.events
 
-    override fun hashCode(): Int = persons.hashCode() * PRIME + relations.hashCode()
+    override fun hashCode(): Int = (persons.hashCode() * PRIME + relations.hashCode()) * PRIME + events.hashCode()
 
-    override fun toString(): String = "FamilyTree(${persons.size} persons, ${relations.size} relations)"
+    override fun toString(): String =
+        "FamilyTree(${persons.size} persons, ${relations.size} relations, ${events.size} events)"
 
     fun parentLinksOf(child: PersonId): List<ParentChild> =
         relationsOf(child).filterIsInstance<ParentChild>().filter { it.child == child }
@@ -167,9 +195,13 @@ class FamilyTree private constructor(
 
         const val UNLIMITED: Int = Int.MAX_VALUE
 
-        val EMPTY: FamilyTree = FamilyTree(persistentMapOf(), persistentMapOf(), TreeIndex.EMPTY)
+        val EMPTY: FamilyTree = FamilyTree(persistentMapOf(), persistentMapOf(), persistentMapOf(), TreeIndex.EMPTY)
 
-        fun of(persons: Collection<Person>, relations: Collection<Relation>): Outcome<FamilyTree> {
+        fun of(
+            persons: Collection<Person>,
+            relations: Collection<Relation>,
+            events: Collection<Event> = emptyList(),
+        ): Outcome<FamilyTree> {
             var tree = EMPTY
             for (person in persons) {
                 when (val added = tree.addPerson(person)) {
@@ -179,6 +211,12 @@ class FamilyTree private constructor(
             }
             for (relation in relations) {
                 when (val added = tree.addRelation(relation)) {
+                    is Outcome.Ok -> tree = added.value
+                    is Outcome.Err -> return added
+                }
+            }
+            for (event in events) {
+                when (val added = tree.addEvent(event)) {
                     is Outcome.Ok -> tree = added.value
                     is Outcome.Err -> return added
                 }

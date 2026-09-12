@@ -1,14 +1,7 @@
 package me.terevo.ui.tree
 
 import me.terevo.domain.Outcome
-import me.terevo.domain.command.AddPerson
-import me.terevo.domain.command.AddRelation
-import me.terevo.domain.command.Batch
-import me.terevo.domain.command.Command
-import me.terevo.domain.command.CommandBus
-import me.terevo.domain.command.RemovePerson
-import me.terevo.domain.command.RemoveRelation
-import me.terevo.domain.command.UpdatePerson
+import me.terevo.domain.command.*
 import me.terevo.domain.model.PersonId
 import me.terevo.layout.NodeId
 
@@ -56,6 +49,9 @@ private fun Command.russianDescription(): String = when (this) {
     is RemovePerson -> "удаление человека"
     is AddRelation -> "восстановление связи"
     is RemoveRelation -> "удаление связи"
+    is AddEvent -> "восстановление события"
+    is UpdateEvent -> "изменение события"
+    is RemoveEvent -> "удаление события"
     is Batch -> commands.singleOrNull()?.russianDescription() ?: "групповое изменение"
 }
 
@@ -65,6 +61,9 @@ private fun Command.affectedPerson(commandBus: CommandBus): PersonId? = when (th
     is RemovePerson -> id
     is AddRelation -> relation.participants.firstOrNull()
     is RemoveRelation -> commandBus.tree.value.relation(id)?.participants?.firstOrNull()
+    is AddEvent -> event.participants.firstOrNull()?.personId
+    is UpdateEvent -> event.participants.firstOrNull()?.personId
+    is RemoveEvent -> commandBus.tree.value.event(id)?.participants?.firstOrNull()?.personId
     is Batch -> commands.firstNotNullOfOrNull { it.affectedPerson(commandBus) }
 }
 

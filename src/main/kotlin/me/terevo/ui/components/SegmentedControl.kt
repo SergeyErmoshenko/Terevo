@@ -14,6 +14,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -42,6 +43,8 @@ fun <T> SegmentedControl(
                 Box(
                     modifier = Modifier
                         .weight(1f)
+                        .padding(2.dp)
+                        .clip(RoundedCornerShape(percent = 50))
                         .clickable(onClick = { onSelect(option) })
                         .background(if (isSelected) colors.selection else Color.Transparent)
                         .padding(vertical = spacing.small, horizontal = spacing.extraSmall / 2),

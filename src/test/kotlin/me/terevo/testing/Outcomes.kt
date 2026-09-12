@@ -1,8 +1,8 @@
 package me.terevo.testing
 
-import kotlin.test.fail
 import me.terevo.domain.DomainError
 import me.terevo.domain.Outcome
+import kotlin.test.fail
 
 fun <T> Outcome<T>.shouldBeOk(): T = when (this) {
     is Outcome.Ok -> value

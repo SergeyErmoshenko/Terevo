@@ -1,9 +1,5 @@
 package me.terevo.domain.command
 
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
 import me.terevo.domain.DomainError
 import me.terevo.domain.invariant.Change
 import me.terevo.domain.model.FamilyTree
@@ -12,6 +8,10 @@ import me.terevo.testing.InMemoryTreeRepository
 import me.terevo.testing.person
 import me.terevo.testing.shouldBeErr
 import me.terevo.testing.shouldBeOk
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class CommandBusPersistenceTest {
 

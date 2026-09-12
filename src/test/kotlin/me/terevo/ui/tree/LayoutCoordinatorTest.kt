@@ -4,8 +4,6 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
 import me.terevo.layout.LayoutRequest
 import me.terevo.layout.NodeMetrics
 import me.terevo.layout.Size
@@ -14,6 +12,8 @@ import me.terevo.testing.NODE_HEIGHT
 import me.terevo.testing.NODE_WIDTH
 import me.terevo.testing.graphOf
 import me.terevo.testing.nodeId
+import kotlin.test.Test
+import kotlin.test.assertEquals
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class LayoutCoordinatorTest {

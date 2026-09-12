@@ -1,11 +1,6 @@
 package me.terevo.kinship
 
-import me.terevo.domain.model.FamilyTree
-import me.terevo.domain.model.Gender
-import me.terevo.domain.model.Marriage
-import me.terevo.domain.model.MarriageStatus
-import me.terevo.domain.model.ParentKind
-import me.terevo.domain.model.PersonId
+import me.terevo.domain.model.*
 
 sealed interface KinshipResult {
     data object SamePerson : KinshipResult

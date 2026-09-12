@@ -6,6 +6,7 @@ import me.terevo.domain.model.FamilyTree
 import me.terevo.domain.model.Marriage
 import me.terevo.domain.model.isKnown
 import me.terevo.domain.port.MediaRepository
+import me.terevo.ui.Strings
 import me.terevo.ui.person.mainPhotoPath
 
 fun mapEventRows(tree: FamilyTree, mediaRepository: MediaRepository, today: LocalDate): List<EventRow> {
@@ -13,7 +14,8 @@ fun mapEventRows(tree: FamilyTree, mediaRepository: MediaRepository, today: Loca
     for (person in tree.persons.values) {
         if (person.lifeSpan.birth.isKnown) {
             rows += EventRow(
-                type = EventType.BIRTH,
+                id = null,
+                type = Strings.BIRTH_DATE,
                 participants = person.name.display,
                 date = person.lifeSpan.birth,
                 place = person.birthPlace?.title.orEmpty(),
@@ -24,7 +26,8 @@ fun mapEventRows(tree: FamilyTree, mediaRepository: MediaRepository, today: Loca
         }
         if (person.lifeSpan.death.isKnown) {
             rows += EventRow(
-                type = EventType.DEATH,
+                id = null,
+                type = Strings.DEATH_DATE,
                 participants = person.name.display,
                 date = person.lifeSpan.death,
                 place = person.deathPlace?.title.orEmpty(),
@@ -41,13 +44,31 @@ fun mapEventRows(tree: FamilyTree, mediaRepository: MediaRepository, today: Loca
         val spouseB = tree.person(relation.spouseB)
         val participants = listOfNotNull(spouseA?.name?.display, spouseB?.name?.display).joinToString(" и ")
         rows += EventRow(
-            type = EventType.WEDDING,
+            id = null,
+            type = Strings.MARRIAGE_DATE,
             participants = participants,
             date = relation.since,
             place = relation.place?.title.orEmpty(),
             daysUntilAnniversary = relation.since.anniversaryDays(today),
             yearsPassed = relation.since.yearsPassed(today),
             thumbnailPath = spouseA?.mainPhotoPath(mediaRepository),
+        )
+    }
+    for (event in tree.events.values) {
+        val participants = event.participants.joinToString(", ") { participant ->
+            val name = tree.person(participant.personId)?.name?.display.orEmpty()
+            if (participant.role.isBlank()) name else "${participant.role}: $name"
+        }
+        val firstParticipant = event.participants.firstOrNull()?.let { tree.person(it.personId) }
+        rows += EventRow(
+            id = event.id,
+            type = event.type,
+            participants = participants,
+            date = event.date,
+            place = event.place?.title.orEmpty(),
+            daysUntilAnniversary = event.date.anniversaryDays(today),
+            yearsPassed = event.date.yearsPassed(today),
+            thumbnailPath = firstParticipant?.mainPhotoPath(mediaRepository),
         )
     }
     return rows.sortedBy { it.daysUntilAnniversary ?: Int.MAX_VALUE }

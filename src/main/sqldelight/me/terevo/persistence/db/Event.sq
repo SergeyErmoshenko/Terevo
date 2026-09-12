@@ -1,0 +1,84 @@
+CREATE TABLE event (
+    id TEXT NOT NULL PRIMARY KEY,
+    type TEXT NOT NULL,
+    date_kind TEXT NOT NULL,
+    date_value TEXT,
+    date_end TEXT,
+    date_precision TEXT,
+    place TEXT,
+    place_latitude REAL,
+    place_longitude REAL,
+    notes TEXT NOT NULL
+);
+
+CREATE TABLE event_participant (
+    event_id TEXT NOT NULL,
+    person_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    PRIMARY KEY (event_id, person_id),
+    FOREIGN KEY (event_id) REFERENCES event(id) ON DELETE CASCADE,
+    FOREIGN KEY (person_id) REFERENCES person(id) ON DELETE CASCADE
+);
+
+CREATE INDEX event_participant_event ON event_participant(event_id);
+
+CREATE INDEX event_participant_person ON event_participant(person_id);
+
+selectAll:
+SELECT * FROM event;
+
+insert:
+INSERT INTO event(
+    id,
+    type,
+    date_kind,
+    date_value,
+    date_end,
+    date_precision,
+    place,
+    place_latitude,
+    place_longitude,
+    notes
+)
+VALUES (
+    :id,
+    :type,
+    :date_kind,
+    :date_value,
+    :date_end,
+    :date_precision,
+    :place,
+    :place_latitude,
+    :place_longitude,
+    :notes
+);
+
+update:
+UPDATE event
+SET type = :type,
+    date_kind = :date_kind,
+    date_value = :date_value,
+    date_end = :date_end,
+    date_precision = :date_precision,
+    place = :place,
+    place_latitude = :place_latitude,
+    place_longitude = :place_longitude,
+    notes = :notes
+WHERE id = :id;
+
+delete:
+DELETE FROM event WHERE id = ?;
+
+deleteAll:
+DELETE FROM event;
+
+selectAllParticipants:
+SELECT * FROM event_participant ORDER BY event_id, position;
+
+insertParticipant:
+INSERT INTO event_participant(event_id, person_id, role, position)
+VALUES (:event_id, :person_id, :role, :position);
+
+deleteParticipantsByEvent:
+DELETE FROM event_participant WHERE event_id = ?;

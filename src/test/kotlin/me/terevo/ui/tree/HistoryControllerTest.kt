@@ -1,16 +1,12 @@
 package me.terevo.ui.tree
 
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
 import me.terevo.domain.command.AddPerson
 import me.terevo.domain.command.CommandBus
 import me.terevo.domain.model.FamilyTree
 import me.terevo.testing.InMemoryTreeRepository
 import me.terevo.testing.person
 import me.terevo.testing.shouldBeOk
+import kotlin.test.*
 
 class HistoryControllerTest {
 

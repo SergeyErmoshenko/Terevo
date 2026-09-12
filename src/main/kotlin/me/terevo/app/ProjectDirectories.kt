@@ -1,7 +1,7 @@
 package me.terevo.app
 
-import java.nio.file.Path
 import me.terevo.domain.port.ProjectLocation
+import java.nio.file.Path
 
 class ProjectDirectories(
     private val documents: Path = Path.of(System.getProperty("user.home"), "Documents"),

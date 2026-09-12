@@ -28,6 +28,9 @@ class InMemoryTreeRepository(initial: FamilyTree = FamilyTree.EMPTY) : TreeRepos
                 is Change.RemovePerson -> current.removePerson(change.id).getOrElse { current }
                 is Change.AddRelation -> current.addRelation(change.relation).getOrElse { current }
                 is Change.RemoveRelation -> current.removeRelation(change.id).getOrElse { current }
+                is Change.AddEvent -> current.addEvent(change.event).getOrElse { current }
+                is Change.UpdateEvent -> current.updateEvent(change.event).getOrElse { current }
+                is Change.RemoveEvent -> current.removeEvent(change.id).getOrElse { current }
             }
         }
         stored = current

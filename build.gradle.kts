@@ -1,6 +1,4 @@
 import org.gradle.internal.os.OperatingSystem
-import org.gradle.jvm.toolchain.JavaLanguageVersion
-import org.gradle.jvm.toolchain.JvmVendorSpec
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
@@ -31,6 +29,8 @@ dependencies {
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
     implementation(compose.materialIconsExtended)
+    implementation(libs.material.kolor)
+    implementation(libs.tabler.icons)
 
     implementation(libs.bundles.kotlinx)
     implementation(libs.kotlinx.coroutines.swing)

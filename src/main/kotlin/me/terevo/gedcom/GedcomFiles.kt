@@ -1,11 +1,11 @@
 package me.terevo.gedcom
 
-import java.nio.charset.StandardCharsets
-import java.nio.file.Files
-import java.nio.file.Path
 import me.terevo.domain.DomainError
 import me.terevo.domain.Outcome
 import me.terevo.domain.model.FamilyTree
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.Path
 
 object GedcomFiles {
     fun preview(path: String): Outcome<GedcomPreview> = try {

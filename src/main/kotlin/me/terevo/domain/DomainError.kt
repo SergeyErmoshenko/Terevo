@@ -2,6 +2,7 @@ package me.terevo.domain
 
 import kotlinx.datetime.LocalDate
 import me.terevo.domain.model.EventDate
+import me.terevo.domain.model.EventId
 import me.terevo.domain.model.PersonId
 import me.terevo.domain.model.RelationId
 
@@ -10,6 +11,7 @@ sealed interface DomainError {
     sealed interface Missing : DomainError {
         data class Person(val id: PersonId) : Missing
         data class Relation(val id: RelationId) : Missing
+        data class Event(val id: EventId) : Missing
     }
 
     sealed interface Storage : DomainError {
@@ -34,6 +36,7 @@ sealed interface DomainError {
     sealed interface Tree : DomainError {
         data class PersonAlreadyExists(val id: PersonId) : Tree
         data class RelationAlreadyExists(val id: RelationId) : Tree
+        data class EventAlreadyExists(val id: EventId) : Tree
     }
 
     sealed interface Link : DomainError {
@@ -66,5 +69,11 @@ sealed interface DomainError {
 
     sealed interface Media : DomainError {
         data object Duplicate : Media
+    }
+
+    sealed interface Event : DomainError {
+        data object BlankType : Event
+        data object NoParticipants : Event
+        data class DuplicateParticipant(val person: PersonId) : Event
     }
 }

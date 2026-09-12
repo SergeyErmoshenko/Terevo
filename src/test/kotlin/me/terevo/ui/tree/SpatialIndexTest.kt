@@ -1,13 +1,13 @@
 package me.terevo.ui.tree
 
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 import me.terevo.layout.Layout
 import me.terevo.layout.NodeId
 import me.terevo.layout.Point
 import me.terevo.layout.Rect
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class SpatialIndexTest {
 

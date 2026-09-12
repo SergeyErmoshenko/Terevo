@@ -1,21 +1,16 @@
 package me.terevo.persistence
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
-import kotlin.system.measureTimeMillis
-import kotlin.test.AfterTest
-import kotlin.test.BeforeTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 import me.terevo.domain.invariant.Change
 import me.terevo.domain.model.FamilyTree
 import me.terevo.domain.model.Marriage
 import me.terevo.domain.model.ParentChild
-import me.terevo.domain.model.Person
 import me.terevo.domain.model.Relation
 import me.terevo.persistence.db.TerevoDatabase
 import me.terevo.testing.person
 import me.terevo.testing.shouldBeOk
+import kotlin.system.measureTimeMillis
+import kotlin.test.*
 
 class LargeTreeLoadTest {
 

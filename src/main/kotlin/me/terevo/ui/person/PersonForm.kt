@@ -173,7 +173,7 @@ internal fun placeOf(value: String): Outcome<Place?> =
         is Outcome.Err -> place
     }
 
-private fun EventDate.toInput(): EventDateInput = when (this) {
+internal fun EventDate.toInput(): EventDateInput = when (this) {
     is EventDate.Exact -> EventDateInput(EventDateMode.EXACT, date.toDisplayDate())
     is EventDate.Approximate -> EventDateInput(EventDateMode.APPROXIMATE, around.toDisplayDate(), precision = precision)
     is EventDate.Range -> EventDateInput(EventDateMode.RANGE, from.toDisplayDate(), to.toDisplayDate())

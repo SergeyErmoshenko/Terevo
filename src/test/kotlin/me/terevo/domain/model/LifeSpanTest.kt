@@ -1,14 +1,10 @@
 package me.terevo.domain.model
 
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 import kotlinx.datetime.LocalDate
 import me.terevo.domain.DomainError
 import me.terevo.testing.shouldBeErr
 import me.terevo.testing.shouldBeOk
+import kotlin.test.*
 
 class LifeSpanTest {
 

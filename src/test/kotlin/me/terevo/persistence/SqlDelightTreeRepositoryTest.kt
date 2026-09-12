@@ -1,33 +1,14 @@
 package me.terevo.persistence
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
-import kotlin.test.AfterTest
-import kotlin.test.BeforeTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 import kotlinx.datetime.LocalDate
-import me.terevo.domain.command.AddPerson
-import me.terevo.domain.command.AddRelation
-import me.terevo.domain.command.CommandBus
-import me.terevo.domain.command.RemovePerson
-import me.terevo.domain.command.UpdatePerson
-import me.terevo.domain.model.Coordinates
-import me.terevo.domain.model.DatePrecision
-import me.terevo.domain.model.EventDate
-import me.terevo.domain.model.Gender
-import me.terevo.domain.model.LifeSpan
-import me.terevo.domain.model.Marriage
-import me.terevo.domain.model.MarriageStatus
-import me.terevo.domain.model.ParentChild
-import me.terevo.domain.model.ParentKind
-import me.terevo.domain.model.Person
-import me.terevo.domain.model.Place
+import me.terevo.domain.command.*
+import me.terevo.domain.model.*
 import me.terevo.persistence.db.TerevoDatabase
 import me.terevo.testing.name
 import me.terevo.testing.person
 import me.terevo.testing.shouldBeOk
+import kotlin.test.*
 
 class SqlDelightTreeRepositoryTest {
 
@@ -168,6 +149,82 @@ class SqlDelightTreeRepositoryTest {
         val loaded = repository.load().shouldBeOk().person(stored.id)
 
         assertEquals(EventDate.Approximate(LocalDate(1890, 1, 1), DatePrecision.DECADE), loaded?.lifeSpan?.birth)
+    }
+
+    @Test
+    fun `event with several participants and roles survives a round trip`() {
+        val bus = CommandBus(repository = repository)
+        val groom = person(surname = "Иванов")
+        val bride = person(surname = "Петрова", gender = Gender.FEMALE)
+        val witness = person(surname = "Сидоров")
+        bus.execute(AddPerson(groom)).shouldBeOk()
+        bus.execute(AddPerson(bride)).shouldBeOk()
+        bus.execute(AddPerson(witness)).shouldBeOk()
+        val event = Event.of(
+            type = "Свадьба",
+            place = Place.of("Москва").shouldBeOk(),
+            participants = listOf(
+                EventParticipant(groom.id, "Жених"),
+                EventParticipant(bride.id, "Невеста"),
+                EventParticipant(witness.id, "Свидетель"),
+            ),
+            notes = "заметка",
+        ).shouldBeOk()
+        bus.execute(AddEvent(event)).shouldBeOk()
+
+        val loaded = repository.load().shouldBeOk()
+
+        assertEquals(bus.tree.value, loaded)
+        assertEquals(event, loaded.event(event.id))
+    }
+
+    @Test
+    fun `updating an event replaces participants instead of duplicating them`() {
+        val bus = CommandBus(repository = repository)
+        val honoree = person()
+        bus.execute(AddPerson(honoree)).shouldBeOk()
+        val event = Event.of(type = "Юбилей", participants = listOf(EventParticipant(honoree.id, "Именинник")))
+            .shouldBeOk()
+        bus.execute(AddEvent(event)).shouldBeOk()
+
+        val renamed = event.with(type = "Выпускной").shouldBeOk()
+        bus.execute(UpdateEvent(renamed)).shouldBeOk()
+
+        val loaded = repository.load().shouldBeOk()
+        assertEquals(renamed, loaded.event(event.id))
+        assertEquals(1, loaded.event(event.id)?.participants?.size)
+    }
+
+    @Test
+    fun `removing an event clears its participants from storage`() {
+        val bus = CommandBus(repository = repository)
+        val honoree = person()
+        bus.execute(AddPerson(honoree)).shouldBeOk()
+        val event = Event.of(type = "Юбилей", participants = listOf(EventParticipant(honoree.id, "Именинник")))
+            .shouldBeOk()
+        bus.execute(AddEvent(event)).shouldBeOk()
+
+        bus.execute(RemoveEvent(event.id)).shouldBeOk()
+
+        val loaded = repository.load().shouldBeOk()
+        assertNull(loaded.event(event.id))
+        assertEquals(1, loaded.size)
+    }
+
+    @Test
+    fun `removing a person cascades to their events in storage`() {
+        val bus = CommandBus(repository = repository)
+        val honoree = person()
+        bus.execute(AddPerson(honoree)).shouldBeOk()
+        val event = Event.of(type = "Юбилей", participants = listOf(EventParticipant(honoree.id, "Именинник")))
+            .shouldBeOk()
+        bus.execute(AddEvent(event)).shouldBeOk()
+
+        bus.execute(RemovePerson(honoree.id)).shouldBeOk()
+
+        val loaded = repository.load().shouldBeOk()
+        assertNull(loaded.event(event.id))
+        assertEquals(bus.tree.value, loaded)
     }
 
     private fun richPerson(): Person = Person.create(

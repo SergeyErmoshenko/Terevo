@@ -1,11 +1,11 @@
 package me.terevo.ui.events
 
 import me.terevo.domain.model.EventDate
-
-enum class EventType { BIRTH, WEDDING, DEATH }
+import me.terevo.domain.model.EventId
 
 data class EventRow(
-    val type: EventType,
+    val id: EventId?,
+    val type: String,
     val participants: String,
     val date: EventDate,
     val place: String,

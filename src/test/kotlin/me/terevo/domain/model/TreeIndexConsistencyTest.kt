@@ -1,11 +1,11 @@
 package me.terevo.domain.model
 
+import me.terevo.domain.Outcome
+import me.terevo.testing.person
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import me.terevo.domain.Outcome
-import me.terevo.testing.person
 
 class TreeIndexConsistencyTest {
 

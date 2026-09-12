@@ -1,12 +1,12 @@
 package me.terevo.ui.person
 
-import kotlin.test.Test
-import kotlin.test.assertEquals
 import me.terevo.domain.model.FamilyTree
 import me.terevo.domain.model.Gender
 import me.terevo.domain.model.ParentChild
 import me.terevo.testing.person
 import me.terevo.testing.shouldBeOk
+import kotlin.test.Test
+import kotlin.test.assertEquals
 
 class KinshipRolesTest {
 

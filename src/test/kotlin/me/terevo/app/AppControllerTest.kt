@@ -7,6 +7,7 @@ import me.terevo.domain.port.ProjectLocation
 import me.terevo.layout.LayoutMode
 import me.terevo.persistence.SqliteProjectService
 import me.terevo.ui.Strings
+import me.terevo.ui.events.EventParticipantInput
 import me.terevo.ui.person.*
 import me.terevo.ui.tree.NodeAccent
 import java.nio.file.Files
@@ -519,6 +520,93 @@ class AppControllerTest {
         val child = assertNotNull(state.selectedChildren.singleOrNull())
         val tree = assertNotNull(controller.commandBus?.tree?.value)
         assertEquals(setOf(father, mother), tree.parentsOf(child.id).toSet())
+    }
+
+    @Test
+    fun `adding an event with participants creates it and closes the form`() {
+        controller.create(locationOf("add-event"))
+        val groom = createPerson("Иванов", "Иван")
+        val bride = createPerson("Иванова", "Мария")
+        val form = assertNotNull(controller.startAddingEvent().eventForm)
+
+        controller.updateEventForm(
+            form.copy(
+                type = "Свадьба",
+                date = EventDateInput(EventDateMode.EXACT, "01.06.2020"),
+                place = "Казань",
+                participants = listOf(
+                    EventParticipantInput(personId = groom, role = "Жених"),
+                    EventParticipantInput(personId = bride, role = "Невеста"),
+                ),
+            ),
+        )
+        val saved = controller.saveEvent()
+
+        assertEquals(null, saved.eventForm)
+        val row = assertNotNull(saved.eventRows.singleOrNull { it.type == "Свадьба" })
+        assertNotNull(row.id)
+        assertTrue(row.participants.contains("Жених: Иванов Иван"))
+        assertTrue(row.participants.contains("Невеста: Иванова Мария"))
+    }
+
+    @Test
+    fun `editing an existing event prefills its data`() {
+        controller.create(locationOf("edit-event"))
+        val honoree = createPerson("Петров", "Пётр")
+        val form = assertNotNull(controller.startAddingEvent().eventForm)
+        controller.updateEventForm(
+            form.copy(
+                type = "Юбилей",
+                date = EventDateInput(EventDateMode.EXACT, "25.12.1990"),
+                participants = listOf(EventParticipantInput(personId = honoree, role = "Именинник")),
+            ),
+        )
+        val saved = controller.saveEvent()
+        val eventId = assertNotNull(saved.eventRows.singleOrNull { it.type == "Юбилей" }?.id)
+
+        val editForm = assertNotNull(controller.startEditingEvent(eventId).eventForm)
+
+        assertEquals("Юбилей", editForm.type)
+        assertEquals("Именинник", editForm.participants.single().role)
+        assertEquals(honoree, editForm.participants.single().personId)
+    }
+
+    @Test
+    fun `deleting an event removes it from the event rows`() {
+        controller.create(locationOf("delete-event"))
+        val honoree = createPerson("Сидоров", "Сидор")
+        val form = assertNotNull(controller.startAddingEvent().eventForm)
+        controller.updateEventForm(
+            form.copy(
+                type = "Выпускной",
+                date = EventDateInput(EventDateMode.EXACT, "01.07.2015"),
+                participants = listOf(EventParticipantInput(personId = honoree, role = "Выпускник")),
+            ),
+        )
+        val eventId = assertNotNull(controller.saveEvent().eventRows.singleOrNull { it.type == "Выпускной" }?.id)
+
+        val state = controller.deleteEvent(eventId)
+
+        assertTrue(state.eventRows.none { it.id == eventId })
+    }
+
+    @Test
+    fun `cancelling an event form does not persist it`() {
+        controller.create(locationOf("cancel-event"))
+        val honoree = createPerson("Кузнецов", "Кузьма")
+        val form = assertNotNull(controller.startAddingEvent().eventForm)
+        controller.updateEventForm(
+            form.copy(
+                type = "Юбилей",
+                date = EventDateInput(EventDateMode.EXACT, "01.01.2000"),
+                participants = listOf(EventParticipantInput(personId = honoree, role = "Именинник")),
+            ),
+        )
+
+        val state = controller.cancelEvent()
+
+        assertEquals(null, state.eventForm)
+        assertTrue(state.eventRows.none { it.type == "Юбилей" })
     }
 
     private fun createPerson(surname: String, givenName: String): me.terevo.domain.model.PersonId {

@@ -1,9 +1,6 @@
 package me.terevo.domain.invariant
 
-import me.terevo.domain.model.Person
-import me.terevo.domain.model.PersonId
-import me.terevo.domain.model.Relation
-import me.terevo.domain.model.RelationId
+import me.terevo.domain.model.*
 
 sealed interface Change {
     data class AddPerson(val person: Person) : Change
@@ -11,4 +8,7 @@ sealed interface Change {
     data class RemovePerson(val id: PersonId) : Change
     data class AddRelation(val relation: Relation) : Change
     data class RemoveRelation(val id: RelationId) : Change
+    data class AddEvent(val event: Event) : Change
+    data class UpdateEvent(val event: Event) : Change
+    data class RemoveEvent(val id: EventId) : Change
 }

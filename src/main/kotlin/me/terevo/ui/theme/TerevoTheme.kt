@@ -2,16 +2,26 @@ package me.terevo.ui.theme
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.material3.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
+import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.platform.Font
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.materialkolor.PaletteStyle
+import com.materialkolor.dynamicColorScheme
 
 @Immutable
 data class TerevoColors(
@@ -42,52 +52,117 @@ data class TerevoSpacing(
     val cornerRadius: Dp,
 )
 
+private fun interFont(weight: FontWeight, axisValue: Int) = Font(
+    resource = "font/Inter-Variable.ttf",
+    weight = weight,
+    style = FontStyle.Normal,
+    variationSettings = FontVariation.Settings(FontVariation.weight(axisValue)),
+)
+
+val InterFontFamily: FontFamily = FontFamily(
+    interFont(FontWeight.Normal, 400),
+    interFont(FontWeight.Medium, 500),
+    interFont(FontWeight.SemiBold, 600),
+    interFont(FontWeight.Bold, 700),
+)
+
 object TerevoTypography {
     val material: Typography = Typography().let { base ->
         base.copy(
-            headlineSmall = base.headlineSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.sp),
-            titleLarge = base.titleLarge.copy(fontWeight = FontWeight.SemiBold, lineHeight = 28.sp),
-            titleMedium = base.titleMedium.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 0.1.sp),
-            bodyLarge = base.bodyLarge.copy(lineHeight = 22.sp),
-            bodyMedium = base.bodyMedium.copy(lineHeight = 20.sp),
-            labelLarge = base.labelLarge.copy(fontWeight = FontWeight.Medium, letterSpacing = 0.2.sp),
+            displayLarge = base.displayLarge.copy(fontFamily = InterFontFamily),
+            displayMedium = base.displayMedium.copy(fontFamily = InterFontFamily),
+            displaySmall = base.displaySmall.copy(fontFamily = InterFontFamily),
+            headlineLarge = base.headlineLarge.copy(fontFamily = InterFontFamily),
+            headlineMedium = base.headlineMedium.copy(fontFamily = InterFontFamily),
+            headlineSmall = base.headlineSmall.copy(
+                fontFamily = InterFontFamily,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.sp,
+            ),
+            titleLarge = base.titleLarge.copy(
+                fontFamily = InterFontFamily,
+                fontWeight = FontWeight.SemiBold,
+                lineHeight = 28.sp,
+            ),
+            titleMedium = base.titleMedium.copy(
+                fontFamily = InterFontFamily,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.1.sp,
+            ),
+            titleSmall = base.titleSmall.copy(fontFamily = InterFontFamily),
+            bodyLarge = base.bodyLarge.copy(fontFamily = InterFontFamily, lineHeight = 22.sp),
+            bodyMedium = base.bodyMedium.copy(fontFamily = InterFontFamily, lineHeight = 20.sp),
+            bodySmall = base.bodySmall.copy(fontFamily = InterFontFamily),
+            labelLarge = base.labelLarge.copy(
+                fontFamily = InterFontFamily,
+                fontWeight = FontWeight.Medium,
+                letterSpacing = 0.2.sp,
+            ),
+            labelMedium = base.labelMedium.copy(fontFamily = InterFontFamily),
+            labelSmall = base.labelSmall.copy(fontFamily = InterFontFamily),
         )
     }
 }
 
-internal val LightColors = TerevoColors(
-    canvas = Color(0xFFF6F5FA),
-    sidebar = Color(0xFFFAF9FE),
-    statusBar = Color(0xFFEDEBF5),
-    selection = Color(0xFF5B3FD1),
-    accent = Color(0xFF0F766E),
+private val TerevoShapes = Shapes(
+    extraSmall = RoundedCornerShape(4.dp),
+    small = RoundedCornerShape(8.dp),
+    medium = RoundedCornerShape(8.dp),
+    large = RoundedCornerShape(12.dp),
+    extraLarge = RoundedCornerShape(16.dp),
+)
+
+private val SeedColor = Color(0xFF5865F2)
+
+private data class FixedSemanticColors(
+    val male: Color,
+    val female: Color,
+    val unknownGender: Color,
+    val error: Color,
+)
+
+private val LightFixedColors = FixedSemanticColors(
     male = Color(0xFF3F6FB0),
     female = Color(0xFFB0477E),
     unknownGender = Color(0xFF6E7180),
-    surfaceVariant = Color(0xFFEFEDF7),
-    outline = Color(0xFFDDD9EC),
-    textPrimary = Color(0xFF1B1726),
-    textSecondary = Color(0xFF5C5770),
-    cardSurface = Color(0xFFFFFFFF),
     error = Color(0xFFB3261E),
 )
 
-internal val DarkColors = TerevoColors(
-    canvas = Color(0xFF17151F),
-    sidebar = Color(0xFF1E1B29),
-    statusBar = Color(0xFF120F18),
-    selection = Color(0xFFB4A7F5),
-    accent = Color(0xFF5EEAD4),
+private val DarkFixedColors = FixedSemanticColors(
     male = Color(0xFF7EA6E8),
     female = Color(0xFFE895BE),
     unknownGender = Color(0xFF9C97AD),
-    surfaceVariant = Color(0xFF262233),
-    outline = Color(0xFF3A3450),
-    textPrimary = Color(0xFFF1EFF7),
-    textSecondary = Color(0xFFABA6BD),
-    cardSurface = Color(0xFF241F30),
     error = Color(0xFFFFB4AB),
 )
+
+private fun terevoColorsFor(scheme: ColorScheme, dark: Boolean): TerevoColors {
+    val fixed = if (dark) DarkFixedColors else LightFixedColors
+    return TerevoColors(
+        canvas = scheme.background,
+        sidebar = scheme.surfaceContainer,
+        statusBar = scheme.surfaceContainerHighest,
+        selection = scheme.primary,
+        accent = scheme.tertiary,
+        male = fixed.male,
+        female = fixed.female,
+        unknownGender = fixed.unknownGender,
+        surfaceVariant = scheme.surfaceVariant,
+        outline = scheme.outline,
+        textPrimary = scheme.onBackground,
+        textSecondary = scheme.onSurfaceVariant,
+        cardSurface = scheme.surface,
+        error = fixed.error,
+    )
+}
+
+private val LightMaterialScheme: ColorScheme =
+    dynamicColorScheme(seedColor = SeedColor, isDark = false, style = PaletteStyle.TonalSpot)
+
+private val DarkMaterialScheme: ColorScheme =
+    dynamicColorScheme(seedColor = SeedColor, isDark = true, style = PaletteStyle.TonalSpot)
+
+internal val LightColors: TerevoColors = terevoColorsFor(LightMaterialScheme, dark = false)
+internal val DarkColors: TerevoColors = terevoColorsFor(DarkMaterialScheme, dark = true)
 
 private val Spacing = TerevoSpacing(
     extraSmall = 4.dp,
@@ -110,23 +185,18 @@ object TerevoTheme {
         @Composable get() = LocalTerevoSpacing.current
 }
 
-private fun materialColorScheme(colors: TerevoColors, dark: Boolean): ColorScheme {
-    val onColor = if (dark) Color(0xFF17151F) else Color(0xFFFFFFFF)
-    val scheme = if (dark) darkColorScheme() else lightColorScheme()
-    return scheme.copy(
-        primary = colors.selection,
-        onPrimary = onColor,
-        secondary = colors.accent,
-        onSecondary = onColor,
+private fun materialColorScheme(base: ColorScheme, colors: TerevoColors, dark: Boolean): ColorScheme {
+    val onError = if (dark) Color(0xFF690005) else Color(0xFFFFFFFF)
+    return base.copy(
         background = colors.canvas,
         onBackground = colors.textPrimary,
-        surface = colors.sidebar,
+        surface = colors.cardSurface,
         onSurface = colors.textPrimary,
         surfaceVariant = colors.surfaceVariant,
         onSurfaceVariant = colors.textSecondary,
-        error = colors.error,
-        onError = onColor,
         outline = colors.outline,
+        error = colors.error,
+        onError = onError,
     )
 }
 
@@ -158,14 +228,16 @@ fun TerevoTheme(
     darkTheme: Boolean = false,
     content: @Composable () -> Unit,
 ) {
+    val baseScheme = if (darkTheme) DarkMaterialScheme else LightMaterialScheme
     val colors = (if (darkTheme) DarkColors else LightColors).animated()
     CompositionLocalProvider(
         LocalTerevoColors provides colors,
         LocalTerevoSpacing provides Spacing,
     ) {
         MaterialTheme(
-            colorScheme = materialColorScheme(colors, darkTheme),
+            colorScheme = materialColorScheme(baseScheme, colors, darkTheme),
             typography = TerevoTypography.material,
+            shapes = TerevoShapes,
             content = content,
         )
     }

@@ -72,6 +72,7 @@ class SqliteProjectService(
                     DomainError.Project.SchemaTooNew(meta, TerevoDatabase.Schema.version),
                 )
             }
+            ensureEventTables(driver)
             backups.capture(driver, file)
             Outcome.Ok(SqliteOpenProject(location, meta, driver, database, lock, this))
         }
@@ -88,6 +89,58 @@ class SqliteProjectService(
             },
             parameters = 0,
         ).value
+
+    private fun ensureEventTables(driver: JdbcSqliteDriver) {
+        if (tableExists(driver, "event")) return
+        driver.execute(
+            null,
+            """
+            CREATE TABLE event (
+                id TEXT NOT NULL PRIMARY KEY,
+                type TEXT NOT NULL,
+                date_kind TEXT NOT NULL,
+                date_value TEXT,
+                date_end TEXT,
+                date_precision TEXT,
+                place TEXT,
+                place_latitude REAL,
+                place_longitude REAL,
+                notes TEXT NOT NULL
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            CREATE TABLE event_participant (
+                event_id TEXT NOT NULL,
+                person_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                position INTEGER NOT NULL,
+                PRIMARY KEY (event_id, person_id),
+                FOREIGN KEY (event_id) REFERENCES event(id) ON DELETE CASCADE,
+                FOREIGN KEY (person_id) REFERENCES person(id) ON DELETE CASCADE
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(null, "CREATE INDEX event_participant_event ON event_participant(event_id)", 0)
+        driver.execute(null, "CREATE INDEX event_participant_person ON event_participant(person_id)", 0)
+    }
+
+    private fun tableExists(driver: JdbcSqliteDriver, name: String): Boolean =
+        driver.executeQuery(
+            identifier = null,
+            sql = "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
+            mapper = { cursor ->
+                app.cash.sqldelight.db.QueryResult.Value(
+                    if (cursor.next().value) cursor.getLong(0) ?: 0L else 0L,
+                )
+            },
+            parameters = 1,
+            binders = { bindString(0, name) },
+        ).value > 0L
 
     private fun readMeta(database: TerevoDatabase): Long? = try {
         database.metaQueries.select().executeAsOneOrNull()?.schema_version

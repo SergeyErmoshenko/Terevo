@@ -1,15 +1,10 @@
 package me.terevo.ui.documents
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.draganddrop.dragAndDropTarget
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.OpenInNew
-import androidx.compose.material.icons.filled.AttachFile
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -18,9 +13,14 @@ import androidx.compose.ui.draganddrop.DragAndDropEvent
 import androidx.compose.ui.draganddrop.DragAndDropTarget
 import androidx.compose.ui.draganddrop.awtTransferable
 import androidx.compose.ui.unit.dp
+import compose.icons.TablerIcons
+import compose.icons.tablericons.ExternalLink
+import compose.icons.tablericons.Paperclip
+import compose.icons.tablericons.Trash
 import me.terevo.ui.AppAction
 import me.terevo.ui.AppState
 import me.terevo.ui.Strings
+import me.terevo.ui.components.TerevoCard
 import me.terevo.ui.theme.TerevoTheme
 import java.awt.datatransfer.DataFlavor
 import java.io.File
@@ -102,25 +102,21 @@ private fun DocumentsPanel(state: AppState, onAction: (AppAction) -> Unit) {
     ) {
         Text(person.name.display, style = MaterialTheme.typography.titleMedium)
         OutlinedButton(onClick = { onAction(AppAction.ChooseMedia) }, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.Filled.AttachFile, contentDescription = null)
+            Icon(TablerIcons.Paperclip, contentDescription = null)
             Text(Strings.ADD_MEDIA, modifier = Modifier.padding(start = spacing.small))
         }
         LazyColumn(modifier = Modifier.fillMaxSize()) {
             items(state.selectedMedia, key = { it.id.value }) { media ->
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = colors.surfaceVariant),
-                    border = BorderStroke(1.dp, colors.outline),
-                    modifier = Modifier.fillMaxWidth().padding(vertical = spacing.extraSmall),
-                ) {
+                TerevoCard(modifier = Modifier.fillMaxWidth().padding(vertical = spacing.extraSmall)) {
                     Column(modifier = Modifier.padding(spacing.small)) {
                         Text(media.fileName)
                         Row(horizontalArrangement = Arrangement.spacedBy(spacing.small)) {
                             OutlinedButton(onClick = { onAction(AppAction.OpenMedia(media.id)) }) {
-                                Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
+                                Icon(TablerIcons.ExternalLink, contentDescription = null)
                                 Text(Strings.OPEN_MEDIA, modifier = Modifier.padding(start = spacing.small))
                             }
                             OutlinedButton(onClick = { onAction(AppAction.RemoveMedia(media.id)) }) {
-                                Icon(Icons.Filled.Delete, contentDescription = null, tint = colors.error)
+                                Icon(TablerIcons.Trash, contentDescription = null, tint = colors.error)
                                 Text(Strings.REMOVE_MEDIA, modifier = Modifier.padding(start = spacing.small))
                             }
                         }

@@ -1,10 +1,10 @@
 package me.terevo.app
 
+import me.terevo.domain.port.ProjectLocation
 import java.awt.FileDialog
 import java.awt.Frame
 import java.io.File
 import java.nio.file.Files
-import me.terevo.domain.port.ProjectLocation
 
 class ProjectDialogs(
     private val owner: Frame?,

@@ -2,13 +2,6 @@ package me.terevo.persistence
 
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
-import java.nio.file.Files
-import java.nio.file.Path
-import kotlin.io.path.createTempDirectory
-import kotlin.test.AfterTest
-import kotlin.test.BeforeTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
 import me.terevo.domain.command.AddPerson
 import me.terevo.domain.command.AddRelation
 import me.terevo.domain.command.CommandBus
@@ -17,6 +10,13 @@ import me.terevo.domain.port.ProjectLocation
 import me.terevo.persistence.db.TerevoDatabase
 import me.terevo.testing.person
 import me.terevo.testing.shouldBeOk
+import java.nio.file.Files
+import java.nio.file.Path
+import kotlin.io.path.createTempDirectory
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
 
 class SqlitePragmaTest {
 

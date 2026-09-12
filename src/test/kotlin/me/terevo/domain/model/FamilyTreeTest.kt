@@ -1,15 +1,11 @@
 package me.terevo.domain.model
 
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 import me.terevo.domain.DomainError
 import me.terevo.domain.Outcome
 import me.terevo.testing.person
 import me.terevo.testing.shouldBeErr
 import me.terevo.testing.shouldBeOk
+import kotlin.test.*
 
 class FamilyTreeTest {
 
@@ -173,6 +169,60 @@ class FamilyTreeTest {
 
         assertEquals(2, built.size)
         assertEquals(listOf(parent.id), built.parentsOf(child.id))
+    }
+
+    @Test
+    fun `adding an event with unknown participant is rejected`() {
+        val known = person()
+        val tree = treeOf(known)
+        val event = Event.of(
+            type = "Свадьба",
+            participants = listOf(EventParticipant(known.id, "Гость"), EventParticipant(PersonId.next(), "Гость")),
+        ).shouldBeOk()
+
+        val error = tree.addEvent(event).shouldBeErr()
+
+        assertTrue(error is DomainError.Missing.Person)
+    }
+
+    @Test
+    fun `adding the same event twice is rejected`() {
+        val person = person()
+        val event = Event.of(type = "Юбилей", participants = listOf(EventParticipant(person.id, "Именинник")))
+            .shouldBeOk()
+        val tree = treeOf(person).addEvent(event).shouldBeOk()
+
+        val error = tree.addEvent(event).shouldBeErr()
+
+        assertTrue(error is DomainError.Tree.EventAlreadyExists)
+    }
+
+    @Test
+    fun `removing an unknown event is rejected`() {
+        val error = FamilyTree.EMPTY.removeEvent(EventId.next()).shouldBeErr()
+
+        assertTrue(error is DomainError.Missing.Event)
+    }
+
+    @Test
+    fun `removing a person cascades to their events without touching others`() {
+        val alone = person()
+        val shared1 = person()
+        val shared2 = person()
+        val soleEvent = Event.of(type = "Юбилей", participants = listOf(EventParticipant(alone.id, "Именинник")))
+            .shouldBeOk()
+        val sharedEvent = Event.of(
+            type = "Свадьба",
+            participants = listOf(EventParticipant(shared1.id, "Жених"), EventParticipant(shared2.id, "Невеста")),
+        ).shouldBeOk()
+        val tree = treeOf(alone, shared1, shared2)
+            .addEvent(soleEvent).shouldBeOk()
+            .addEvent(sharedEvent).shouldBeOk()
+
+        val without = tree.removePerson(alone.id).shouldBeOk()
+
+        assertNull(without.event(soleEvent.id))
+        assertEquals(sharedEvent, without.event(sharedEvent.id))
     }
 
     private fun treeOf(vararg people: Person): FamilyTree =

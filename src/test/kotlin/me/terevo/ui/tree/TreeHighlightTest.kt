@@ -1,12 +1,12 @@
 package me.terevo.ui.tree
 
+import me.terevo.layout.LayoutEdge
+import me.terevo.layout.NodeId
+import me.terevo.ui.Strings
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import me.terevo.layout.LayoutEdge
-import me.terevo.layout.NodeId
-import me.terevo.ui.Strings
 
 class TreeHighlightTest {
     private val selected = NodeId("selected")

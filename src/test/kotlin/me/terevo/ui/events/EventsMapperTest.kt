@@ -5,6 +5,7 @@ import me.terevo.domain.model.*
 import me.terevo.domain.port.MediaRepository
 import me.terevo.testing.person
 import me.terevo.testing.shouldBeOk
+import me.terevo.ui.Strings
 import kotlin.test.*
 
 class EventsMapperTest {
@@ -25,12 +26,55 @@ class EventsMapperTest {
 
         val rows = mapEventRows(tree, MediaRepository.NONE, today)
 
-        assertTrue(rows.any { it.type == EventType.BIRTH && it.participants == "Иванов Иван" })
-        assertTrue(rows.any { it.type == EventType.BIRTH && it.participants == "Петров Пётр" })
-        assertTrue(rows.any { it.type == EventType.DEATH && it.participants == "Петров Пётр" })
-        val wedding = assertNotNull(rows.singleOrNull { it.type == EventType.WEDDING })
+        assertTrue(rows.any { it.type == Strings.BIRTH_DATE && it.participants == "Иванов Иван" && it.id == null })
+        assertTrue(rows.any { it.type == Strings.BIRTH_DATE && it.participants == "Петров Пётр" && it.id == null })
+        assertTrue(rows.any { it.type == Strings.DEATH_DATE && it.participants == "Петров Пётр" && it.id == null })
+        val wedding = assertNotNull(rows.singleOrNull { it.type == Strings.MARRIAGE_DATE })
+        assertNull(wedding.id)
         assertTrue(wedding.participants.contains("Сидоров Сидор"))
         assertTrue(wedding.participants.contains("Сидорова Мария"))
+    }
+
+    @Test
+    fun `custom event appears with id and formatted participants`() {
+        val groom = person(surname = "Иванов", givenName = "Иван")
+        val bride = person(surname = "Иванова", givenName = "Мария")
+        val witness = person(surname = "Сидоров", givenName = "Сидор")
+        val event = Event.of(
+            type = "Свадьба",
+            date = EventDate.Exact(LocalDate(2020, 6, 1)),
+            participants = listOf(
+                EventParticipant(groom.id, "Жених"),
+                EventParticipant(bride.id, "Невеста"),
+                EventParticipant(witness.id, "Свидетель"),
+            ),
+        ).shouldBeOk()
+        val tree = FamilyTree.of(listOf(groom, bride, witness), emptyList(), listOf(event)).shouldBeOk()
+
+        val rows = mapEventRows(tree, MediaRepository.NONE, today)
+
+        val row = assertNotNull(rows.singleOrNull { it.id == event.id })
+        assertEquals("Свадьба", row.type)
+        assertEquals("Жених: Иванов Иван, Невеста: Иванова Мария, Свидетель: Сидоров Сидор", row.participants)
+    }
+
+    @Test
+    fun `custom and auto events are sorted together`() {
+        val soon = person(surname = "Иванов", givenName = "Иван").with(
+            lifeSpan = LifeSpan.of(birth = EventDate.Exact(LocalDate(1990, 9, 6)), death = EventDate.Unknown)
+                .shouldBeOk(),
+        ).shouldBeOk()
+        val honoree = person(surname = "Петров", givenName = "Пётр")
+        val event = Event.of(
+            type = "Юбилей",
+            date = EventDate.Exact(LocalDate(1990, 12, 25)),
+            participants = listOf(EventParticipant(honoree.id, "Именинник")),
+        ).shouldBeOk()
+        val tree = FamilyTree.of(listOf(soon, honoree), emptyList(), listOf(event)).shouldBeOk()
+
+        val rows = mapEventRows(tree, MediaRepository.NONE, today)
+
+        assertEquals(listOf("Иванов Иван", "Именинник: Петров Пётр"), rows.map { it.participants })
     }
 
     @Test

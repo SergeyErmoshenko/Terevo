@@ -1,18 +1,64 @@
 package me.terevo.domain.command
 
+import me.terevo.domain.Outcome
+import me.terevo.domain.model.*
+import me.terevo.testing.name
+import me.terevo.testing.person
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import me.terevo.domain.Outcome
-import me.terevo.domain.model.FamilyTree
-import me.terevo.domain.model.Marriage
-import me.terevo.domain.model.ParentChild
-import me.terevo.domain.model.PersonId
-import me.terevo.testing.name
-import me.terevo.testing.person
 
 class UndoRedoRoundTripTest {
+
+    @Test
+    fun `add update and remove event can be undone and redone`() {
+        val bus = CommandBus(undoLimit = 10)
+        val person = person()
+        bus.execute(AddPerson(person))
+        val event = Event.of(type = "Юбилей", participants = listOf(EventParticipant(person.id, "Именинник")))
+            .let { (it as Outcome.Ok).value }
+
+        bus.execute(AddEvent(event))
+        assertEquals(event, bus.tree.value.event(event.id))
+
+        val renamed = event.with(type = "Выпускной").let { (it as Outcome.Ok).value }
+        bus.execute(UpdateEvent(renamed))
+        assertEquals("Выпускной", bus.tree.value.event(event.id)?.type)
+
+        bus.execute(RemoveEvent(event.id))
+        assertEquals(null, bus.tree.value.event(event.id))
+
+        bus.undo()
+        assertEquals(renamed, bus.tree.value.event(event.id))
+        bus.undo()
+        assertEquals(event, bus.tree.value.event(event.id))
+        bus.undo()
+        assertEquals(null, bus.tree.value.event(event.id))
+
+        bus.redo()
+        bus.redo()
+        bus.redo()
+        assertEquals(null, bus.tree.value.event(event.id))
+    }
+
+    @Test
+    fun `undoing removal of a person restores their events`() {
+        val bus = CommandBus(undoLimit = 10)
+        val person = person()
+        bus.execute(AddPerson(person))
+        val event = Event.of(type = "Юбилей", participants = listOf(EventParticipant(person.id, "Именинник")))
+            .let { (it as Outcome.Ok).value }
+        bus.execute(AddEvent(event))
+
+        bus.execute(RemovePerson(person.id))
+        assertEquals(null, bus.tree.value.person(person.id))
+        assertEquals(null, bus.tree.value.event(event.id))
+
+        bus.undo()
+        assertEquals(person, bus.tree.value.person(person.id))
+        assertEquals(event, bus.tree.value.event(event.id))
+    }
 
     @Test
     fun `undoing every command returns the initial tree and redoing returns the final one`() {

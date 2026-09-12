@@ -7,23 +7,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
-import androidx.compose.material.icons.automirrored.filled.OpenInNew
-import androidx.compose.material.icons.filled.Cake
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Group
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Place
-import androidx.compose.material.icons.filled.Work
-import androidx.compose.material3.Button
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,12 +19,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import me.terevo.domain.model.Gender
-import me.terevo.domain.model.Marriage
-import me.terevo.domain.model.Media
-import me.terevo.domain.model.MediaId
-import me.terevo.domain.model.Person
+import compose.icons.TablerIcons
+import compose.icons.tablericons.*
+import me.terevo.domain.model.*
 import me.terevo.ui.Strings
+import me.terevo.ui.components.TerevoCard
 import me.terevo.ui.theme.TerevoTheme
 import me.terevo.ui.tree.ThumbnailCache
 
@@ -121,12 +104,12 @@ fun PersonViewDialog(
                     verticalArrangement = Arrangement.spacedBy(spacing.medium),
                 ) {
                     val facts = listOfNotNull(
-                        person.birthPlace?.let { Icons.Filled.Cake to "${Strings.BIRTH_PLACE}: ${it.title}" },
-                        person.deathPlace?.let { Icons.Filled.Place to "${Strings.DEATH_PLACE}: ${it.title}" },
-                        person.residence?.let { Icons.Filled.Home to "${Strings.RESIDENCE}: ${it.title}" },
+                        person.birthPlace?.let { TablerIcons.Gift to "${Strings.BIRTH_PLACE}: ${it.title}" },
+                        person.deathPlace?.let { TablerIcons.MapPin to "${Strings.DEATH_PLACE}: ${it.title}" },
+                        person.residence?.let { TablerIcons.Home to "${Strings.RESIDENCE}: ${it.title}" },
                         person.occupation.takeIf { it.isNotBlank() }
-                            ?.let { Icons.Filled.Work to "${Strings.OCCUPATION}: $it" },
-                        person.notes.takeIf { it.isNotBlank() }?.let { Icons.Filled.Description to it },
+                            ?.let { TablerIcons.Briefcase to "${Strings.OCCUPATION}: $it" },
+                        person.notes.takeIf { it.isNotBlank() }?.let { TablerIcons.FileText to it },
                     )
                     if (facts.isNotEmpty()) {
                         Column(verticalArrangement = Arrangement.spacedBy(spacing.small)) {
@@ -134,23 +117,19 @@ fun PersonViewDialog(
                         }
                     }
                     if (parents.isNotEmpty()) {
-                        Section(Strings.PARENTS, Icons.Filled.Group) {
+                        Section(Strings.PARENTS, TablerIcons.Users) {
                             parents.forEach { PersonNameRow(it.name.display) }
                         }
                     }
                     if (children.isNotEmpty()) {
-                        Section(Strings.CHILDREN, Icons.Filled.Group) {
+                        Section(Strings.CHILDREN, TablerIcons.Users) {
                             children.forEach { PersonNameRow(it.name.display) }
                         }
                     }
                     if (spouses.isNotEmpty()) {
-                        Section(Strings.SPOUSES, Icons.Filled.Group) {
+                        Section(Strings.SPOUSES, TablerIcons.Users) {
                             spouses.forEach { info ->
-                                Surface(
-                                    color = colors.surfaceVariant,
-                                    shape = RoundedCornerShape(spacing.small),
-                                    modifier = Modifier.fillMaxWidth(),
-                                ) {
+                                TerevoCard(modifier = Modifier.fillMaxWidth()) {
                                     Column(
                                         modifier = Modifier.padding(spacing.small),
                                         verticalArrangement = Arrangement.spacedBy(spacing.extraSmall),
@@ -174,7 +153,7 @@ fun PersonViewDialog(
                         }
                     }
                     if (person.customFields.isNotEmpty()) {
-                        Section(Strings.CUSTOM_FIELDS, Icons.Filled.Info) {
+                        Section(Strings.CUSTOM_FIELDS, TablerIcons.InfoCircle) {
                             person.customFields.forEach { (key, value) ->
                                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     Text(key, color = colors.textSecondary, style = MaterialTheme.typography.bodySmall)
@@ -184,13 +163,9 @@ fun PersonViewDialog(
                         }
                     }
                     if (media.isNotEmpty()) {
-                        Section(Strings.MEDIA, Icons.AutoMirrored.Filled.InsertDriveFile) {
+                        Section(Strings.MEDIA, TablerIcons.File) {
                             media.forEach { item ->
-                                Surface(
-                                    color = colors.surfaceVariant,
-                                    shape = RoundedCornerShape(spacing.small),
-                                    modifier = Modifier.fillMaxWidth(),
-                                ) {
+                                TerevoCard(modifier = Modifier.fillMaxWidth()) {
                                     Row(
                                         modifier = Modifier.padding(spacing.small),
                                         horizontalArrangement = Arrangement.spacedBy(spacing.small),
@@ -207,7 +182,7 @@ fun PersonViewDialog(
                                             )
                                         } else {
                                             Icon(
-                                                Icons.AutoMirrored.Filled.InsertDriveFile,
+                                                TablerIcons.File,
                                                 contentDescription = null,
                                                 tint = colors.textSecondary,
                                                 modifier = Modifier.size(28.dp),
@@ -215,7 +190,7 @@ fun PersonViewDialog(
                                         }
                                         Text(item.fileName, modifier = Modifier.weight(1f))
                                         OutlinedButton(onClick = { onOpenMedia(item.id) }) {
-                                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
+                                            Icon(TablerIcons.ExternalLink, contentDescription = null)
                                             Text(Strings.OPEN_MEDIA, modifier = Modifier.padding(start = spacing.small))
                                         }
                                     }

@@ -1,18 +1,14 @@
 package me.terevo.persistence
 
+import me.terevo.domain.Outcome
+import me.terevo.domain.port.ProjectLocation
+import me.terevo.testing.shouldBeOk
 import java.awt.image.BufferedImage
 import java.nio.file.Files
 import java.nio.file.Path
 import javax.imageio.ImageIO
 import kotlin.io.path.createTempDirectory
-import kotlin.test.AfterTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
-import me.terevo.domain.Outcome
-import me.terevo.domain.port.ProjectLocation
-import me.terevo.testing.shouldBeOk
+import kotlin.test.*
 
 class ProjectMediaRepositoryTest {
     private val workspace: Path = createTempDirectory("terevo-media")

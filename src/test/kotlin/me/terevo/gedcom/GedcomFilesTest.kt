@@ -1,11 +1,11 @@
 package me.terevo.gedcom
 
+import me.terevo.testing.shouldBeOk
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import kotlin.io.path.createTempFile
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import me.terevo.testing.shouldBeOk
 
 class GedcomFilesTest {
 

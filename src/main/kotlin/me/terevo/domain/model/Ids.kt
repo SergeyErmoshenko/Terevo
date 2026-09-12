@@ -1,6 +1,6 @@
 package me.terevo.domain.model
 
-import java.util.UUID
+import java.util.*
 
 @JvmInline
 value class PersonId(val value: UUID) {
@@ -32,5 +32,16 @@ value class MediaId(val value: UUID) {
         fun next(): MediaId = MediaId(UUID.randomUUID())
 
         fun parse(text: String): MediaId = MediaId(UUID.fromString(text))
+    }
+}
+
+@JvmInline
+value class EventId(val value: UUID) {
+    override fun toString(): String = value.toString()
+
+    companion object {
+        fun next(): EventId = EventId(UUID.randomUUID())
+
+        fun parse(text: String): EventId = EventId(UUID.fromString(text))
     }
 }
