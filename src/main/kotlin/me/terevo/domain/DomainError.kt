@@ -42,6 +42,7 @@ sealed interface DomainError {
         data class CycleDetected(val path: List<PersonId>) : Link
         data class TooManyBiologicalParents(val child: PersonId) : Link
         data class MarriageEndsBeforeStart(val since: EventDate, val until: EventDate) : Link
+        data class SpouseParentChildConflict(val first: PersonId, val second: PersonId) : Link
     }
 
     sealed interface Name : DomainError {

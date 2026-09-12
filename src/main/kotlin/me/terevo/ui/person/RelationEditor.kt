@@ -19,8 +19,13 @@ class RelationEditor(
     fun addParent(parent: PersonId, child: PersonId, kind: ParentKind): RelationResult =
         executeRelation(ParentChild.of(parent = parent, child = child, kind = kind))
 
-    fun addChild(parent: PersonId, child: PersonId, kind: ParentKind): RelationResult =
-        addParent(parent, child, kind)
+    fun addChild(parent: PersonId, child: PersonId, kind: ParentKind, secondParent: PersonId? = null): RelationResult =
+        executeRelations(
+            listOfNotNull(
+                ParentChild.of(parent = parent, child = child, kind = kind),
+                secondParent?.let { ParentChild.of(parent = it, child = child, kind = kind) },
+            ),
+        )
 
     fun addSpouse(
         first: PersonId,
@@ -32,10 +37,20 @@ class RelationEditor(
         executeRelation(Marriage.of(first = first, second = second, since = since, status = status, place = place))
 
     fun addParentWithPerson(parent: Person, child: PersonId, kind: ParentKind): RelationResult =
-        executeCreatedPerson(parent, ParentChild.of(parent = parent.id, child = child, kind = kind))
+        executeCreatedPerson(parent, listOf(ParentChild.of(parent = parent.id, child = child, kind = kind)))
 
-    fun addChildWithPerson(child: Person, parent: PersonId, kind: ParentKind): RelationResult =
-        executeCreatedPerson(child, ParentChild.of(parent = parent, child = child.id, kind = kind))
+    fun addChildWithPerson(
+        child: Person,
+        parent: PersonId,
+        kind: ParentKind,
+        secondParent: PersonId? = null,
+    ): RelationResult = executeCreatedPerson(
+        child,
+        listOfNotNull(
+            ParentChild.of(parent = parent, child = child.id, kind = kind),
+            secondParent?.let { ParentChild.of(parent = it, child = child.id, kind = kind) },
+        ),
+    )
 
     fun addSpouseWithPerson(
         spouse: Person,
@@ -45,7 +60,7 @@ class RelationEditor(
         place: Place? = null,
     ): RelationResult = executeCreatedPerson(
         spouse,
-        Marriage.of(first = person, second = spouse.id, since = since, status = status, place = place),
+        listOf(Marriage.of(first = person, second = spouse.id, since = since, status = status, place = place)),
     )
 
     fun remove(id: RelationId): RelationResult = execute(RemoveRelation(id))
@@ -62,16 +77,32 @@ class RelationEditor(
 
     private fun executeCreatedPerson(
         person: Person,
-        relation: Outcome<me.terevo.domain.model.Relation>
-    ): RelationResult =
-        when (relation) {
-            is Outcome.Ok -> execute(Batch(listOf(AddPerson(person), AddRelation(relation.value))))
-            is Outcome.Err -> RelationResult.Error(relation.error.toRelationMessage(commandBus.tree.value))
+        relations: List<Outcome<me.terevo.domain.model.Relation>>,
+    ): RelationResult = when (val combined = combine(relations)) {
+        is Outcome.Ok -> execute(Batch(listOf(AddPerson(person)) + combined.value.map(::AddRelation)))
+        is Outcome.Err -> RelationResult.Error(combined.error.toRelationMessage(commandBus.tree.value))
+    }
+
+    private fun executeRelation(relation: Outcome<me.terevo.domain.model.Relation>): RelationResult =
+        executeRelations(listOf(relation))
+
+    private fun executeRelations(relations: List<Outcome<me.terevo.domain.model.Relation>>): RelationResult =
+        when (val combined = combine(relations)) {
+            is Outcome.Ok -> execute(Batch(combined.value.map(::AddRelation)))
+            is Outcome.Err -> RelationResult.Error(combined.error.toRelationMessage(commandBus.tree.value))
         }
 
-    private fun executeRelation(relation: Outcome<me.terevo.domain.model.Relation>): RelationResult = when (relation) {
-        is Outcome.Ok -> execute(AddRelation(relation.value))
-        is Outcome.Err -> RelationResult.Error(relation.error.toRelationMessage(commandBus.tree.value))
+    private fun combine(
+        relations: List<Outcome<me.terevo.domain.model.Relation>>,
+    ): Outcome<List<me.terevo.domain.model.Relation>> {
+        val result = mutableListOf<me.terevo.domain.model.Relation>()
+        for (relation in relations) {
+            when (relation) {
+                is Outcome.Ok -> result.add(relation.value)
+                is Outcome.Err -> return Outcome.Err(relation.error)
+            }
+        }
+        return Outcome.Ok(result)
     }
 
     private fun execute(command: Command): RelationResult = when (val result = commandBus.execute(command)) {
@@ -90,6 +121,9 @@ fun DomainError.toRelationMessage(tree: FamilyTree): String = when (this) {
     is DomainError.Link.Duplicate -> "Такая связь уже существует"
     is DomainError.Link.TooManyBiologicalParents -> "У человека уже есть два биологических родителя"
     is DomainError.Link.MarriageEndsBeforeStart -> "Дата окончания брака не может быть раньше даты начала"
+    is DomainError.Link.SpouseParentChildConflict ->
+        "Эти люди уже связаны как супруги или как родитель и ребёнок — обе связи одновременно недопустимы"
+
     is DomainError.Link.CycleDetected -> {
         val names = path.map { tree.person(it)?.name?.display ?: it.toString() }
         "Эта связь создаст цикл (${names.joinToString(" → ")})"

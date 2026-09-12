@@ -15,6 +15,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isSecondaryPressed
@@ -23,11 +24,13 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.DpOffset
+import me.terevo.domain.model.PersonId
 import me.terevo.layout.NodeId
 import me.terevo.layout.Point
 import me.terevo.layout.Size
 import me.terevo.ui.Strings
 import me.terevo.ui.person.RelationMode
+import me.terevo.ui.person.spouseActionLabel
 import me.terevo.ui.theme.TerevoTheme
 
 private data class PersonContextMenu(val nodeId: NodeId, val position: Offset)
@@ -36,6 +39,7 @@ private data class PersonContextMenu(val nodeId: NodeId, val position: Offset)
 fun TreeCanvas(
     state: TreeCanvasState,
     onIntent: (TreeCanvasIntent) -> Unit,
+    onViewPerson: (PersonId) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val textMeasurer = rememberTextMeasurer()
@@ -48,6 +52,7 @@ fun TreeCanvas(
         Canvas(
             Modifier
                 .fillMaxSize()
+                .clipToBounds()
                 .onSizeChanged { size ->
                     onIntent(TreeCanvasIntent.Resize(Size(size.width.toDouble(), size.height.toDouble())))
                 }
@@ -116,7 +121,16 @@ fun TreeCanvas(
             drawDotGrid(state.camera, colors, viewport)
             val visible = state.spatialIndex.visible(state.layout, viewport)
             val layout = state.layout.copy(nodes = visible.nodes, edges = visible.edges)
-            drawTree(layout, state.visuals, state.camera, colors, textMeasurer, state.highlight, cornerRadiusPx, density)
+            drawTree(
+                layout,
+                state.visuals,
+                state.camera,
+                colors,
+                textMeasurer,
+                state.highlight,
+                cornerRadiusPx,
+                density
+            )
             state.nodeDrag?.let { drawDragPreview(it, state.layout, state.camera, colors, cornerRadiusPx) }
         }
         contextMenu?.let { menu ->
@@ -136,10 +150,18 @@ fun TreeCanvas(
                         contextMenu = null
                     },
                 )
+                val menuPerson = state.tree.person(PersonId.parse(menu.nodeId.value))
                 DropdownMenuItem(
-                    text = { Text(Strings.ADD_SPOUSE) },
+                    text = { Text(menuPerson?.gender?.spouseActionLabel() ?: Strings.ADD_SPOUSE) },
                     onClick = {
                         onIntent(TreeCanvasIntent.AddRelativeAt(menu.nodeId, RelationMode.SPOUSE))
+                        contextMenu = null
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text(Strings.VIEW_PERSON) },
+                    onClick = {
+                        menuPerson?.let { onViewPerson(it.id) }
                         contextMenu = null
                     },
                 )

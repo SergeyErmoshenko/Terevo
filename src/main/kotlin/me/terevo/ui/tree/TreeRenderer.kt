@@ -67,9 +67,8 @@ fun DrawScope.drawTree(
 
 private fun DrawScope.drawEdge(path: EdgePath, camera: Camera, colors: TerevoColors, accent: NodeAccent) {
     val baseColor = when (path.style) {
-        EdgeStyle.BIOLOGICAL, EdgeStyle.MARRIAGE -> colors.unknownGender
+        EdgeStyle.BIOLOGICAL -> colors.unknownGender
         EdgeStyle.NON_BIOLOGICAL -> colors.accent
-        EdgeStyle.DISSOLVED_MARRIAGE -> colors.female
     }
     val color = when (accent) {
         NodeAccent.FOCUSED, NodeAccent.RELATED -> colors.selection

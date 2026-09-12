@@ -1,10 +1,11 @@
 package me.terevo.layout
 
 import me.terevo.testing.graphOf
+import me.terevo.testing.nodeId
 import me.terevo.testing.parentage
-import me.terevo.testing.union
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class DirectionalLayoutEngineTest {
     private val engine = DirectionalLayoutEngine(WalkerLayoutEngine())
@@ -14,16 +15,24 @@ class DirectionalLayoutEngineTest {
     private val metrics = NodeMetrics(emptyMap(), Size(100.0, 100.0))
 
     @Test
-    fun `top down direction delegates unchanged`() {
+    fun `top down direction mirrors generations so descendants render above ancestors`() {
         val graph = graphOf(
             listOf("grandparent", "parent", "child"),
             listOf(parentage("grandparent", "parent"), parentage("parent", "child")),
         )
         val request = LayoutRequest(graph, metrics, LayoutOptions(direction = LayoutDirection.TOP_DOWN))
 
+        val raw = WalkerLayoutEngine().layout(request)
         val layout = engine.layout(request)
+        val axis = raw.bounds.top + raw.bounds.bottom
 
-        assertEquals(WalkerLayoutEngine().layout(request), layout)
+        for ((id, rect) in raw.nodes) {
+            val mirrored = layout.rectOf(id)!!
+            assertEquals(rect.left, mirrored.left)
+            assertEquals(axis - rect.bottom, mirrored.top)
+        }
+        assertTrue(layout.rectOf(nodeId("child"))!!.top < layout.rectOf(nodeId("parent"))!!.top)
+        assertTrue(layout.rectOf(nodeId("parent"))!!.top < layout.rectOf(nodeId("grandparent"))!!.top)
     }
 
     @Test
@@ -47,7 +56,7 @@ class DirectionalLayoutEngineTest {
 
     @Test
     fun `left right edge segments are transposed`() {
-        val graph = graphOf(listOf("first", "second"), listOf(union("first", "second")))
+        val graph = graphOf(listOf("parent", "child"), listOf(parentage("parent", "child")))
         val topDown = engine.layout(LayoutRequest(graph, metrics, LayoutOptions(direction = LayoutDirection.TOP_DOWN)))
         val leftRight =
             engine.layout(LayoutRequest(graph, metrics, LayoutOptions(direction = LayoutDirection.LEFT_RIGHT)))

@@ -36,7 +36,7 @@ class DragRelationValidityTest {
     }
 
     @Test
-    fun `reversing an existing parent-child link is blocked but marrying them is not`() {
+    fun `an existing parent-child link blocks both reversal and marriage`() {
         val parent = person()
         val child = person()
         val tree = treeOf(parent, child)
@@ -44,8 +44,8 @@ class DragRelationValidityTest {
 
         assertFalse(canCreateRelation(tree, RelationMode.PARENT, parent.id, child.id))
         assertFalse(canCreateRelation(tree, RelationMode.CHILD, parent.id, child.id))
-        assertTrue(canCreateRelation(tree, RelationMode.SPOUSE, parent.id, child.id))
-        assertTrue(canCreateAnyRelation(tree, parent.id, child.id))
+        assertFalse(canCreateRelation(tree, RelationMode.SPOUSE, parent.id, child.id))
+        assertFalse(canCreateAnyRelation(tree, parent.id, child.id))
     }
 
     private fun treeOf(vararg people: Person): FamilyTree =

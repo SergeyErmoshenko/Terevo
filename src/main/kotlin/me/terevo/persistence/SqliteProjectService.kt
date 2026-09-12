@@ -31,7 +31,8 @@ class SqliteProjectService(
                 Files.createDirectories(file.parent.resolve(ProjectLocation.MEDIA_DIRECTORY))
                 Files.createDirectories(file.parent.resolve(ProjectLocation.THUMBNAIL_DIRECTORY))
             }
-            val lock = acquireLock(file) ?: return@guarded Outcome.Err(DomainError.Project.Locked(location.path))
+            val lock =
+                acquireLockWithRetry(file) ?: return@guarded Outcome.Err(DomainError.Project.Locked(location.path))
             val driver = openDriver(file)
             TerevoDatabase.Schema.create(driver)
             val database = TerevoDatabase(driver)
@@ -48,7 +49,8 @@ class SqliteProjectService(
         val file = Path.of(location.path)
         if (!Files.exists(file)) return Outcome.Err(DomainError.Project.NotFound(location.path))
         return guarded(location) {
-            val lock = acquireLock(file) ?: return@guarded Outcome.Err(DomainError.Project.Locked(location.path))
+            val lock =
+                acquireLockWithRetry(file) ?: return@guarded Outcome.Err(DomainError.Project.Locked(location.path))
             val driver = openDriver(file)
             val integrity = readIntegrity(driver)
             if (integrity != "ok") {
@@ -93,6 +95,15 @@ class SqliteProjectService(
         null
     }
 
+    private fun acquireLockWithRetry(file: Path): FileLock? {
+        val deadline = System.nanoTime() + LOCK_RETRY_TIMEOUT_MS * 1_000_000
+        while (true) {
+            acquireLock(file)?.let { return it }
+            if (System.nanoTime() >= deadline) return null
+            Thread.sleep(LOCK_RETRY_DELAY_MS)
+        }
+    }
+
     private fun acquireLock(file: Path): FileLock? {
         val lockFile = lockFileOf(file)
         return try {
@@ -123,6 +134,9 @@ class SqliteProjectService(
     }
 
     internal companion object {
+        private const val LOCK_RETRY_TIMEOUT_MS = 2000L
+        private const val LOCK_RETRY_DELAY_MS = 50L
+
         fun openDriver(file: Path): JdbcSqliteDriver {
             val properties = Properties().apply {
                 setProperty("foreign_keys", "true")
@@ -158,7 +172,6 @@ private class SqliteOpenProject(
 
     override val repository: TreeRepository = SqlDelightTreeRepository(database)
     override val mediaRepository: MediaRepository = ProjectMediaRepository(database, Path.of(location.path))
-    override val nodePositionRepository: NodePositionRepository = SqlNodePositionRepository(database)
 
     override fun saveAs(target: ProjectLocation): Outcome<OpenProject> {
         val targetFile = Path.of(target.path)

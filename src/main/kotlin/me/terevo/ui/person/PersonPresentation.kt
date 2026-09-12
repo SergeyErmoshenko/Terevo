@@ -1,8 +1,15 @@
 package me.terevo.ui.person
 
 import me.terevo.domain.model.EventDate
+import me.terevo.domain.model.Gender
 import me.terevo.domain.model.LifeSpan
 import me.terevo.ui.Strings
+
+fun Gender.spouseActionLabel(): String = when (this) {
+    Gender.MALE -> Strings.ADD_SPOUSE_FOR_MALE
+    Gender.FEMALE -> Strings.ADD_SPOUSE_FOR_FEMALE
+    Gender.UNKNOWN -> Strings.ADD_SPOUSE
+}
 
 fun LifeSpan.displayText(): String {
     val birthText = birth.displayText()

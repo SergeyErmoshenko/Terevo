@@ -24,6 +24,8 @@ import androidx.compose.ui.draganddrop.awtTransferable
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import me.terevo.domain.command.Batch
 import me.terevo.domain.model.Gender
 import me.terevo.domain.model.Media
@@ -32,7 +34,6 @@ import me.terevo.domain.model.Person
 import me.terevo.layout.LayoutDirection
 import me.terevo.layout.LayoutMode
 import me.terevo.layout.LayoutOptions
-import me.terevo.layout.Point
 import me.terevo.statistics.Statistics
 import me.terevo.ui.components.SegmentedControl
 import me.terevo.ui.kinship.KinshipDialog
@@ -41,12 +42,12 @@ import me.terevo.ui.person.*
 import me.terevo.ui.statistics.StatisticsScreen
 import me.terevo.ui.theme.TerevoTheme
 import me.terevo.ui.tree.*
+import org.apache.pdfbox.Loader
+import org.apache.pdfbox.rendering.PDFRenderer
 import java.awt.datatransfer.DataFlavor
 import java.io.ByteArrayOutputStream
 import java.io.File
 import javax.imageio.ImageIO
-import org.apache.pdfbox.Loader
-import org.apache.pdfbox.rendering.PDFRenderer
 import org.jetbrains.skia.Image as SkiaImage
 
 data class GedcomImportState(
@@ -60,13 +61,16 @@ data class MediaViewerState(
     val media: Media,
     val content: ByteArray,
     val zoom: Float = 1f,
+    val page: Int = 0,
 )
 
-private fun ByteArray.renderPdfPreview(): ImageBitmap {
+private fun ByteArray.pdfPageCount(): Int = Loader.loadPDF(this).use { it.numberOfPages }
+
+private fun ByteArray.renderPdfPreview(page: Int): ImageBitmap {
     Loader.loadPDF(this).use { document ->
-        val page = PDFRenderer(document).renderImageWithDPI(0, 150f)
+        val rendered = PDFRenderer(document).renderImageWithDPI(page, 150f)
         val output = ByteArrayOutputStream()
-        ImageIO.write(page, "png", output)
+        ImageIO.write(rendered, "png", output)
         return SkiaImage.makeFromEncoded(output.toByteArray()).toComposeImageBitmap()
     }
 }
@@ -109,14 +113,16 @@ data class AppState(
     val layoutDepth: Int = Int.MAX_VALUE,
     val layoutDirection: LayoutDirection = LayoutDirection.TOP_DOWN,
     val layoutDensity: LayoutDensity = LayoutDensity.SPACIOUS,
-    val pinnedPositions: Map<me.terevo.domain.model.PersonId, Point> = emptyMap(),
     val searchFilter: PersonSearchFilter = PersonSearchFilter(),
     val searchResults: List<Person> = emptyList(),
     val selectedPerson: Person? = null,
     val selectedParents: List<Person> = emptyList(),
     val selectedChildren: List<Person> = emptyList(),
     val selectedSpouses: List<Person> = emptyList(),
+    val selectedSpouseMarriages: List<me.terevo.ui.person.SpouseInfo> = emptyList(),
     val selectedMedia: List<Media> = emptyList(),
+    val selectedPersonPhotoPath: String? = null,
+    val selectedMediaThumbnails: Map<me.terevo.domain.model.MediaId, String?> = emptyMap(),
     val relatedPeople: List<RelatedPerson> = emptyList(),
     val selectionBackHistory: List<me.terevo.domain.model.PersonId> = emptyList(),
     val selectionForwardHistory: List<me.terevo.domain.model.PersonId> = emptyList(),
@@ -138,6 +144,7 @@ data class AppState(
     val sidebarCollapsed: Boolean = false,
     val personRows: List<me.terevo.ui.persons.PersonRow> = emptyList(),
     val eventRows: List<me.terevo.ui.events.EventRow> = emptyList(),
+    val personViewOpen: Boolean = false,
 )
 
 sealed interface AppAction {
@@ -159,7 +166,6 @@ sealed interface AppAction {
     data class ChangeLayoutDepth(val depth: Int) : AppAction
     data class ChangeLayoutDirection(val direction: LayoutDirection) : AppAction
     data class ChangeLayoutDensity(val density: LayoutDensity) : AppAction
-    data object ResetPins : AppAction
     data class ChangeSearchFilter(val filter: PersonSearchFilter) : AppAction
     data object AddPerson : AppAction
     data object EditPerson : AppAction
@@ -172,6 +178,7 @@ sealed interface AppAction {
     data class OpenMedia(val id: MediaId) : AppAction
     data class RemoveMedia(val id: MediaId) : AppAction
     data class ChangeMediaZoom(val zoom: Float) : AppAction
+    data class ChangeMediaPage(val delta: Int) : AppAction
     data object CloseMedia : AppAction
     data class SelectPerson(val id: me.terevo.domain.model.PersonId) : AppAction
     data class UpdatePersonForm(val form: PersonFormState) : AppAction
@@ -199,6 +206,8 @@ sealed interface AppAction {
     data object ChoosePersonFormMedia : AppAction
     data class DropPersonFormMedia(val paths: List<String>) : AppAction
     data class RemovePendingPersonMedia(val path: String) : AppAction
+    data class ViewPerson(val id: me.terevo.domain.model.PersonId) : AppAction
+    data object ClosePersonView : AppAction
 }
 
 data class EmptyProjectAction(
@@ -233,10 +242,7 @@ fun App(
                     MainTab.TREE -> MainTreeTab(state, onAction)
                     MainTab.PERSONS -> me.terevo.ui.persons.PersonsScreen(
                         rows = state.personRows,
-                        onSelect = {
-                            onAction(AppAction.SelectPerson(it))
-                            onAction(AppAction.ChangeMainTab(MainTab.TREE))
-                        },
+                        onSelect = { onAction(AppAction.ViewPerson(it)) },
                         onEdit = {
                             onAction(AppAction.SelectPerson(it))
                             onAction(AppAction.EditPerson)
@@ -272,6 +278,22 @@ fun App(
             onDropMedia = { onAction(AppAction.DropPersonFormMedia(it)) },
             onRemovePendingMedia = { onAction(AppAction.RemovePendingPersonMedia(it)) },
         )
+    }
+    if (state.personViewOpen) {
+        state.selectedPerson?.let { person ->
+            PersonViewDialog(
+                person = person,
+                photoPath = state.selectedPersonPhotoPath,
+                parents = state.selectedParents,
+                children = state.selectedChildren,
+                spouses = state.selectedSpouseMarriages,
+                media = state.selectedMedia,
+                mediaThumbnails = state.selectedMediaThumbnails,
+                onEdit = { onAction(AppAction.EditPerson) },
+                onClose = { onAction(AppAction.ClosePersonView) },
+                onOpenMedia = { onAction(AppAction.OpenMedia(it)) },
+            )
+        }
     }
     state.relationDialog?.let { dialog ->
         RelationDialog(
@@ -311,43 +333,94 @@ fun App(
         )
     }
     state.mediaViewer?.let { viewer ->
-        val image = remember(viewer.content) {
+        val isPdf = viewer.media.mimeType == "application/pdf"
+        val pageCount = remember(viewer.content) {
+            if (isPdf) runCatching { viewer.content.pdfPageCount() }.getOrDefault(1) else 1
+        }
+        val page = viewer.page.coerceIn(0, pageCount - 1)
+        val image = remember(viewer.content, page) {
             runCatching {
                 when {
                     viewer.media.mimeType.startsWith("image/") ->
                         SkiaImage.makeFromEncoded(viewer.content).toComposeImageBitmap()
 
-                    viewer.media.mimeType == "application/pdf" -> viewer.content.renderPdfPreview()
+                    isPdf -> viewer.content.renderPdfPreview(page)
                     else -> null
                 }
             }.getOrNull()
         }
-        AlertDialog(
+        Dialog(
             onDismissRequest = { onAction(AppAction.CloseMedia) },
-            title = { Text(viewer.media.fileName) },
-            text = {
-                if (image == null) {
-                    Text(viewer.media.mimeType)
-                } else {
-                    Image(
-                        bitmap = image,
-                        contentDescription = viewer.media.fileName,
-                        modifier = Modifier.size((500 * viewer.zoom).dp),
-                    )
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Surface(modifier = Modifier.fillMaxSize(), tonalElevation = spacing.small) {
+                Column(modifier = Modifier.fillMaxSize().padding(spacing.large)) {
+                    Text(viewer.media.fileName, style = MaterialTheme.typography.headlineSmall)
+                    Spacer(Modifier.height(spacing.small))
+                    BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        val viewportWidth = maxWidth
+                        val viewportHeight = maxHeight
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState())
+                                .horizontalScroll(rememberScrollState()),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (image == null) {
+                                Text(viewer.media.mimeType)
+                            } else {
+                                val aspect = image.width.toFloat() / image.height.toFloat()
+                                val fitsByHeight = viewportWidth.value / viewportHeight.value > aspect
+                                val fitWidth = if (fitsByHeight) viewportHeight * aspect else viewportWidth
+                                val fitHeight = if (fitsByHeight) viewportHeight else viewportWidth / aspect
+                                Image(
+                                    bitmap = image,
+                                    contentDescription = viewer.media.fileName,
+                                    modifier = Modifier.size(fitWidth * viewer.zoom, fitHeight * viewer.zoom),
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(spacing.small))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(spacing.small),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (isPdf && pageCount > 1) {
+                            OutlinedButton(
+                                onClick = { onAction(AppAction.ChangeMediaPage(-1)) },
+                                enabled = page > 0,
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                                    contentDescription = Strings.PREVIOUS_PAGE
+                                )
+                            }
+                            Text("${page + 1} / $pageCount")
+                            OutlinedButton(
+                                onClick = { onAction(AppAction.ChangeMediaPage(1)) },
+                                enabled = page < pageCount - 1,
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                    contentDescription = Strings.NEXT_PAGE
+                                )
+                            }
+                        }
+                        Spacer(Modifier.weight(1f))
+                        OutlinedButton(
+                            onClick = { onAction(AppAction.ChangeMediaZoom(viewer.zoom / 1.25f)) },
+                        ) { Text(Strings.ZOOM_OUT) }
+                        OutlinedButton(
+                            onClick = { onAction(AppAction.ChangeMediaZoom(viewer.zoom * 1.25f)) },
+                        ) { Text(Strings.ZOOM_IN) }
+                        Button(onClick = { onAction(AppAction.CloseMedia) }) { Text(Strings.CLOSE) }
+                    }
                 }
-            },
-            confirmButton = {
-                Row(horizontalArrangement = Arrangement.spacedBy(spacing.small)) {
-                    OutlinedButton(
-                        onClick = { onAction(AppAction.ChangeMediaZoom(viewer.zoom / 1.25f)) },
-                    ) { Text(Strings.ZOOM_OUT) }
-                    OutlinedButton(
-                        onClick = { onAction(AppAction.ChangeMediaZoom(viewer.zoom * 1.25f)) },
-                    ) { Text(Strings.ZOOM_IN) }
-                    Button(onClick = { onAction(AppAction.CloseMedia) }) { Text(Strings.CLOSE) }
-                }
-            },
-        )
+            }
+        }
     }
 }
 
@@ -456,6 +529,7 @@ private fun MainTreeTab(state: AppState, onAction: (AppAction) -> Unit) {
                     TreeCanvas(
                         state = state.canvas,
                         onIntent = { onAction(AppAction.Canvas(it)) },
+                        onViewPerson = { onAction(AppAction.ViewPerson(it)) },
                     )
                     FloatingActionButton(
                         onClick = { onAction(AppAction.FitToScreen) },
@@ -683,11 +757,6 @@ private fun ProjectSidebar(state: AppState, onAction: (AppAction) -> Unit) {
                     label = { it.label },
                     onSelect = { onAction(AppAction.ChangeLayoutDensity(it)) },
                 )
-                OutlinedButton(
-                    onClick = { onAction(AppAction.ResetPins) },
-                    enabled = state.pinnedPositions.isNotEmpty(),
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text(Strings.RESET_PINS, maxLines = 1) }
             }
         }
         val person = state.selectedPerson ?: return@Column
@@ -724,7 +793,7 @@ private fun ProjectSidebar(state: AppState, onAction: (AppAction) -> Unit) {
                 }
                 Button(onClick = { onAction(AppAction.AddSpouse) }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Filled.Favorite, contentDescription = null)
-                    Text(Strings.ADD_SPOUSE, modifier = Modifier.padding(start = spacing.small))
+                    Text(person.gender.spouseActionLabel(), modifier = Modifier.padding(start = spacing.small))
                 }
                 OutlinedButton(
                     onClick = { onAction(AppAction.OpenKinshipDialog) },

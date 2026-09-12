@@ -13,10 +13,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.window.Popup
+import me.terevo.domain.model.Gender
 import me.terevo.domain.model.PersonId
 import me.terevo.layout.Point
 import me.terevo.ui.Strings
 import me.terevo.ui.person.RelationMode
+import me.terevo.ui.person.spouseActionLabel
 import me.terevo.ui.theme.TerevoTheme
 import kotlin.math.roundToInt
 
@@ -25,6 +27,7 @@ data class DragRelationMenuState(
     val target: PersonId,
     val position: Point,
     val validity: Map<RelationMode, Boolean>,
+    val sourceGender: Gender = Gender.UNKNOWN,
 )
 
 @Composable
@@ -52,7 +55,7 @@ fun DragRelationMenu(
             DragRelationMenuItem(Strings.ADD_CHILD, state.validity[RelationMode.CHILD] == true) {
                 onChoose(RelationMode.CHILD)
             }
-            DragRelationMenuItem(Strings.ADD_SPOUSE, state.validity[RelationMode.SPOUSE] == true) {
+            DragRelationMenuItem(state.sourceGender.spouseActionLabel(), state.validity[RelationMode.SPOUSE] == true) {
                 onChoose(RelationMode.SPOUSE)
             }
         }

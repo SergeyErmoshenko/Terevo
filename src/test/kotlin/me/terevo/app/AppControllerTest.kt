@@ -316,10 +316,14 @@ class AppControllerTest {
 
         val state = controller.selectPerson(child)
         val highlight = state.canvas.highlight
-        val childNode = state.canvas.visuals.persons.values.single { it.nameLines.joinToString(" ") == "Иванов Иван" }.id
-        val parentNode = state.canvas.visuals.persons.values.single { it.nameLines.joinToString(" ") == "Иванова Мария" }.id
-        val spouseNode = state.canvas.visuals.persons.values.single { it.nameLines.joinToString(" ") == "Иванова Анна" }.id
-        val unrelatedNode = state.canvas.visuals.persons.values.single { it.nameLines.joinToString(" ") == "Петров Пётр" }.id
+        val childNode =
+            state.canvas.visuals.persons.values.single { it.nameLines.joinToString(" ") == "Иванов Иван" }.id
+        val parentNode =
+            state.canvas.visuals.persons.values.single { it.nameLines.joinToString(" ") == "Иванова Мария" }.id
+        val spouseNode =
+            state.canvas.visuals.persons.values.single { it.nameLines.joinToString(" ") == "Иванова Анна" }.id
+        val unrelatedNode =
+            state.canvas.visuals.persons.values.single { it.nameLines.joinToString(" ") == "Петров Пётр" }.id
 
         assertEquals(NodeAccent.FOCUSED, highlight.accentOf(childNode))
         assertEquals(Strings.MAIN_PERSON, highlight.roleOf(childNode))
@@ -457,6 +461,64 @@ class AppControllerTest {
 
         assertEquals(1, undone.personCount)
         assertTrue(undone.selectedParents.isEmpty())
+    }
+
+    @Test
+    fun `new spouse via full form is forced to opposite gender and gets linked`() {
+        controller.create(locationOf("gender-check"))
+        val ivan = createPerson("Иванов", "Иван")
+        controller.selectPerson(ivan)
+        val editForm = assertNotNull(controller.startEditingPerson().personForm)
+        controller.updatePersonForm(editForm.copy(gender = me.terevo.domain.model.Gender.MALE))
+        controller.savePerson()
+
+        controller.selectPerson(ivan)
+        controller.startAddingRelation(RelationMode.SPOUSE)
+        val form = assertNotNull(controller.startCreatingRelative().personForm)
+        assertEquals(me.terevo.domain.model.Gender.FEMALE, form.requiredGender)
+        assertEquals(me.terevo.domain.model.Gender.FEMALE, form.gender)
+
+        controller.updatePersonForm(form.copy(surname = "Иванова", givenName = "Мария"))
+        controller.savePerson()
+
+        val tree = assertNotNull(controller.commandBus?.tree?.value)
+        assertEquals(1, tree.spousesOf(ivan).size)
+    }
+
+    @Test
+    fun `linking an existing person as child can also link a second parent`() {
+        controller.create(locationOf("second-parent-existing"))
+        val father = createPerson("Иванов", "Пётр")
+        val mother = createPerson("Иванова", "Мария")
+        val child = createPerson("Иванов", "Алексей")
+        controller.selectPerson(father)
+
+        val dialog = assertNotNull(controller.startAddingRelation(RelationMode.CHILD).relationDialog)
+        controller.updateRelationDialog(dialog.copy(selected = child, secondParent = mother))
+        controller.saveRelation()
+
+        val tree = assertNotNull(controller.commandBus?.tree?.value)
+        assertEquals(setOf(father, mother), tree.parentsOf(child).toSet())
+    }
+
+    @Test
+    fun `creating a new child prefills the surname and can link a second parent`() {
+        controller.create(locationOf("second-parent-new"))
+        val father = createPerson("Иванов", "Пётр")
+        val mother = createPerson("Иванова", "Мария")
+        controller.selectPerson(father)
+
+        val dialog = assertNotNull(controller.startAddingRelation(RelationMode.CHILD).relationDialog)
+        controller.updateRelationDialog(dialog.copy(secondParent = mother))
+        val form = assertNotNull(controller.startCreatingRelative().personForm)
+        assertEquals("Иванов", form.surname)
+
+        controller.updatePersonForm(form.copy(givenName = "Алексей"))
+        val state = controller.savePerson()
+
+        val child = assertNotNull(state.selectedChildren.singleOrNull())
+        val tree = assertNotNull(controller.commandBus?.tree?.value)
+        assertEquals(setOf(father, mother), tree.parentsOf(child.id).toSet())
     }
 
     private fun createPerson(surname: String, givenName: String): me.terevo.domain.model.PersonId {

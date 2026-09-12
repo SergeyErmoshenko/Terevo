@@ -132,9 +132,8 @@ object PdfTreeRenderer {
     }
 
     private fun edgeColor(style: EdgeStyle): Color = when (style) {
-        EdgeStyle.BIOLOGICAL, EdgeStyle.MARRIAGE -> Color(0x8A, 0x8F, 0x98)
+        EdgeStyle.BIOLOGICAL -> Color(0x8A, 0x8F, 0x98)
         EdgeStyle.NON_BIOLOGICAL -> Color(0x3F, 0x51, 0xB5)
-        EdgeStyle.DISSOLVED_MARRIAGE -> Color(0xC6, 0x5A, 0x8B)
     }
 
     private fun genderColor(gender: ExportGender): Color = when (gender) {

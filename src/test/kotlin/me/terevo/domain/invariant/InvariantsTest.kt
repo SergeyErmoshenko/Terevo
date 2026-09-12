@@ -6,6 +6,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import me.terevo.domain.DomainError
 import me.terevo.domain.model.FamilyTree
+import me.terevo.domain.model.Marriage
 import me.terevo.domain.model.ParentChild
 import me.terevo.domain.model.ParentKind
 import me.terevo.domain.model.Person
@@ -88,6 +89,32 @@ class InvariantsTest {
         val extended = tree.addRelation(ParentChild.of(parent = right.id, child = child.id).shouldBeOk()).shouldBeOk()
 
         assertEquals(2, extended.parentsOf(child.id).size)
+    }
+
+    @Test
+    fun `marrying an existing parent or child is rejected`() {
+        val parent = person()
+        val child = person()
+        val tree = treeOf(parent, child)
+            .addRelation(ParentChild.of(parent = parent.id, child = child.id).shouldBeOk()).shouldBeOk()
+
+        val error = tree.addRelation(Marriage.of(first = parent.id, second = child.id).shouldBeOk()).shouldBeErr()
+
+        assertTrue(error is DomainError.Link.SpouseParentChildConflict)
+    }
+
+    @Test
+    fun `making an existing spouse a parent or child is rejected`() {
+        val first = person()
+        val second = person()
+        val tree = treeOf(first, second)
+            .addRelation(Marriage.of(first = first.id, second = second.id).shouldBeOk()).shouldBeOk()
+
+        val error = tree.addRelation(
+            ParentChild.of(parent = first.id, child = second.id).shouldBeOk(),
+        ).shouldBeErr()
+
+        assertTrue(error is DomainError.Link.SpouseParentChildConflict)
     }
 
     @Test

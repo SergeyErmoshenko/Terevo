@@ -51,12 +51,36 @@ object NoCycles : Invariant {
     }
 }
 
+object NoSpouseParentChildConflict : Invariant {
+    override fun check(tree: FamilyTree, change: Change): DomainError? {
+        val relation = (change as? Change.AddRelation)?.relation ?: return null
+        return when (relation) {
+            is ParentChild ->
+                if (tree.spousesOf(relation.parent).contains(relation.child)) {
+                    DomainError.Link.SpouseParentChildConflict(relation.parent, relation.child)
+                } else {
+                    null
+                }
+
+            is Marriage ->
+                if (tree.parentsOf(relation.spouseA).contains(relation.spouseB) ||
+                    tree.childrenOf(relation.spouseA).contains(relation.spouseB)
+                ) {
+                    DomainError.Link.SpouseParentChildConflict(relation.spouseA, relation.spouseB)
+                } else {
+                    null
+                }
+        }
+    }
+}
+
 object Invariants {
     val all: List<Invariant> = listOf(
         NoSelfRelation,
         NoDuplicateRelation,
         AtMostTwoBiologicalParents,
         NoCycles,
+        NoSpouseParentChildConflict,
     )
 
     fun check(tree: FamilyTree, change: Change): DomainError? =

@@ -30,7 +30,6 @@ interface OpenProject {
     val schemaVersion: Long
     val repository: TreeRepository
     val mediaRepository: MediaRepository get() = MediaRepository.NONE
-    val nodePositionRepository: NodePositionRepository get() = NodePositionRepository.NONE
 
     fun saveAs(target: ProjectLocation): Outcome<OpenProject>
 

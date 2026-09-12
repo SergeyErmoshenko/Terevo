@@ -16,6 +16,14 @@ fun main(args: Array<String>) {
             return
         }
     }
+    Thread {
+        readlnOrNull()
+        Runtime.getRuntime().halt(0)
+    }.apply {
+        isDaemon = true
+        start()
+    }
+
     val bus = CommandBus(repository = project.repository)
     var index = 0
     while (true) {

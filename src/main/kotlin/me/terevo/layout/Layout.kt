@@ -10,8 +10,6 @@ enum class LayoutMode {
 enum class EdgeStyle {
     BIOLOGICAL,
     NON_BIOLOGICAL,
-    MARRIAGE,
-    DISSOLVED_MARRIAGE,
 }
 
 enum class LayoutDirection {

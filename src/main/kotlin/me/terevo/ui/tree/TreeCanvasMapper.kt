@@ -14,7 +14,6 @@ object TreeCanvasMapper {
         tree: FamilyTree,
         options: LayoutOptions = LayoutOptions(),
         mediaRepository: MediaRepository = MediaRepository.NONE,
-        pinnedPositions: Map<NodeId, Point> = emptyMap(),
     ): TreeCanvasState {
         val nodes = tree.persons.values.map { person ->
             LayoutNode(person.id.toNodeId(), person.name.sortKey)
@@ -39,7 +38,7 @@ object TreeCanvasMapper {
             person.id.toNodeId() to cardSizeFor(person, mediaRepository)
         }
         val metrics = NodeMetrics(sizes, minCardSize)
-        val layout = engine.layout(LayoutRequest(graph, metrics, options)).withPinned(pinnedPositions, graph)
+        val layout = engine.layout(LayoutRequest(graph, metrics, options))
         val visuals = TreeVisuals(
             tree.persons.values.associate { person -> person.id.toNodeId() to person.toVisual(mediaRepository) },
         )

@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonAdd
@@ -29,11 +30,13 @@ import me.terevo.ui.tree.ThumbnailCache
 
 enum class PersonSortColumn {
     NAME,
+    GENDER,
     BIRTH_DATE,
     RESIDENCE,
     AGE,
     OCCUPATION,
     COMMENT,
+    ALIVE,
 }
 
 private data class PersonSortState(val column: PersonSortColumn = PersonSortColumn.NAME, val ascending: Boolean = true)
@@ -41,14 +44,22 @@ private data class PersonSortState(val column: PersonSortColumn = PersonSortColu
 private fun <T : Comparable<T>> comparatorFor(selector: (PersonRow) -> T?): Comparator<PersonRow> =
     Comparator { a, b -> compareValues(selector(a), selector(b)) }
 
+private fun Gender.displayLabel(): String = when (this) {
+    Gender.MALE -> Strings.GENDER_MALE
+    Gender.FEMALE -> Strings.GENDER_FEMALE
+    Gender.UNKNOWN -> Strings.GENDER_UNKNOWN
+}
+
 private fun List<PersonRow>.sortedByColumn(sortState: PersonSortState): List<PersonRow> {
     val comparator = when (sortState.column) {
         PersonSortColumn.NAME -> comparatorFor { it.fullName }
+        PersonSortColumn.GENDER -> comparatorFor { it.gender }
         PersonSortColumn.BIRTH_DATE -> comparatorFor { it.birthDateSortKey }
         PersonSortColumn.RESIDENCE -> comparatorFor { it.residence }
         PersonSortColumn.AGE -> comparatorFor { it.ageSortKey }
         PersonSortColumn.OCCUPATION -> comparatorFor { it.occupation }
         PersonSortColumn.COMMENT -> comparatorFor { it.comment }
+        PersonSortColumn.ALIVE -> comparatorFor { it.alive }
     }
     return if (sortState.ascending) sortedWith(comparator) else sortedWith(comparator.reversed())
 }
@@ -153,11 +164,13 @@ private fun PersonRowHeader(sortState: PersonSortState, onSort: (PersonSortColum
     Row(modifier = Modifier.fillMaxWidth()) {
         Text("", modifier = Modifier.size(40.dp))
         SortableHeaderCell(Strings.SURNAME, 2f, PersonSortColumn.NAME, sortState, onSort)
+        SortableHeaderCell(Strings.GENDER, 0.8f, PersonSortColumn.GENDER, sortState, onSort)
         SortableHeaderCell(Strings.BIRTH_DATE, 1.2f, PersonSortColumn.BIRTH_DATE, sortState, onSort)
         SortableHeaderCell(Strings.RESIDENCE, 1.5f, PersonSortColumn.RESIDENCE, sortState, onSort)
         SortableHeaderCell("Возраст", 0.8f, PersonSortColumn.AGE, sortState, onSort)
         SortableHeaderCell(Strings.OCCUPATION, 1.5f, PersonSortColumn.OCCUPATION, sortState, onSort)
         SortableHeaderCell(Strings.NOTES, 1.5f, PersonSortColumn.COMMENT, sortState, onSort)
+        SortableHeaderCell("Жив", 0.6f, PersonSortColumn.ALIVE, sortState, onSort)
         Text("", modifier = Modifier.size(40.dp))
     }
 }
@@ -180,11 +193,17 @@ private fun PersonRowItem(row: PersonRow, onSelect: (PersonId) -> Unit, onEdit: 
     ) {
         PersonThumbnail(path = row.thumbnailPath, tint = genderColor)
         Text(row.fullName, modifier = Modifier.weight(2f).padding(start = spacing.small))
+        Text(row.gender.displayLabel(), modifier = Modifier.weight(0.8f))
         Text(row.birthDate, modifier = Modifier.weight(1.2f))
         Text(row.residence, modifier = Modifier.weight(1.5f))
         Text(row.age, modifier = Modifier.weight(0.8f))
         Text(row.occupation, modifier = Modifier.weight(1.5f))
         Text(row.comment, modifier = Modifier.weight(1.5f))
+        Box(modifier = Modifier.weight(0.6f)) {
+            if (row.alive) {
+                Icon(Icons.Filled.Check, contentDescription = Strings.IS_ALIVE, tint = colors.accent)
+            }
+        }
         IconButton(onClick = { onEdit(row.id) }, modifier = Modifier.size(40.dp)) {
             Icon(Icons.Filled.Edit, contentDescription = Strings.EDIT_PERSON)
         }

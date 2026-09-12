@@ -43,6 +43,12 @@ fun main() = application {
                 when {
                     event.key == Key.Escape -> {
                         appState = when {
+                            appState.personForm != null -> controller.cancelPerson()
+                            appState.relationDialog != null -> controller.cancelRelation()
+                            appState.personViewOpen -> controller.closePersonView()
+                            appState.kinshipDialog != null -> controller.closeKinshipDialog()
+                            appState.gedcomPreview != null -> controller.cancelGedcomImport()
+                            appState.statistics != null -> controller.closeStatistics()
                             appState.dragRelationMenu != null -> controller.cancelDragRelationMenu()
                             appState.canvas.nodeDrag != null -> controller.updateCanvas(TreeCanvasIntent.DragNodeCancel)
                             else -> controller.updateCanvas(TreeCanvasIntent.ClearSelection)
@@ -91,7 +97,6 @@ fun main() = application {
                 is AppAction.ChangeLayoutDepth -> appState = controller.changeLayoutDepth(action.depth)
                 is AppAction.ChangeLayoutDirection -> appState = controller.changeLayoutDirection(action.direction)
                 is AppAction.ChangeLayoutDensity -> appState = controller.changeLayoutDensity(action.density)
-                AppAction.ResetPins -> appState = controller.resetPins()
                 is AppAction.ChangeSearchFilter -> appState = controller.changeSearchFilter(action.filter)
                 AppAction.AddPerson -> appState = controller.startAddingPerson()
                 AppAction.EditPerson -> appState = controller.startEditingPerson()
@@ -109,8 +114,11 @@ fun main() = application {
                 is AppAction.OpenMedia -> appState = controller.openMedia(action.id)
                 is AppAction.RemoveMedia -> appState = controller.removeMedia(action.id)
                 is AppAction.ChangeMediaZoom -> appState = controller.changeMediaZoom(action.zoom)
+                is AppAction.ChangeMediaPage -> appState = controller.changeMediaPage(action.delta)
                 AppAction.CloseMedia -> appState = controller.closeMedia()
                 is AppAction.SelectPerson -> appState = controller.selectPerson(action.id)
+                is AppAction.ViewPerson -> appState = controller.viewPerson(action.id)
+                AppAction.ClosePersonView -> appState = controller.closePersonView()
                 is AppAction.UpdatePersonForm -> appState = controller.updatePersonForm(action.form)
                 is AppAction.UpdateRelationDialog -> appState = controller.updateRelationDialog(action.dialog)
                 is AppAction.Canvas -> appState = controller.updateCanvas(action.intent)

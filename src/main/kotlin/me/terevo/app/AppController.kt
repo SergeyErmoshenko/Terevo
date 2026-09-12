@@ -60,7 +60,19 @@ class AppController(
         val tree = commandBus?.tree?.value ?: return state
         state = state.copy(
             personForm = validatePersonForm(PersonFormState.fromPerson(person, customFieldSuggestions(tree))),
+            personViewOpen = false,
         )
+        return state
+    }
+
+    fun viewPerson(id: PersonId): AppState {
+        state = selectPerson(id)
+        state = state.copy(personViewOpen = true)
+        return state
+    }
+
+    fun closePersonView(): AppState {
+        state = state.copy(personViewOpen = false)
         return state
     }
 
@@ -121,20 +133,6 @@ class AppController(
 
     fun changeLayoutDensity(density: LayoutDensity): AppState {
         state = state.copy(layoutDensity = density)
-        return refreshTree()
-    }
-
-    fun pinNode(id: PersonId, point: Point): AppState {
-        val opened = project ?: return state
-        opened.nodePositionRepository.set(id, point.x, point.y)
-        state = state.copy(pinnedPositions = state.pinnedPositions + (id to point))
-        return refreshTree()
-    }
-
-    fun resetPins(): AppState {
-        val opened = project ?: return state
-        opened.nodePositionRepository.clearAll()
-        state = state.copy(pinnedPositions = emptyMap())
         return refreshTree()
     }
 
@@ -268,6 +266,11 @@ class AppController(
         return state
     }
 
+    fun changeMediaPage(delta: Int): AppState {
+        state = state.copy(mediaViewer = state.mediaViewer?.let { it.copy(page = (it.page + delta).coerceAtLeast(0)) })
+        return state
+    }
+
     fun closeMedia(): AppState {
         state = state.copy(mediaViewer = null)
         return state
@@ -299,11 +302,24 @@ class AppController(
             relationDialog = RelationDialogState(
                 mode = mode,
                 source = source,
-                people = tree.persons.values.filter { it.id != source.id }.sortedBy { it.name.sortKey },
+                people = eligibleRelationCandidates(tree, mode, source.id),
+                secondParentCandidates = secondParentCandidates(tree, mode, source.id),
             ),
         )
         return state
     }
+
+    private fun eligibleRelationCandidates(tree: FamilyTree, mode: RelationMode, source: PersonId): List<Person> =
+        tree.persons.values
+            .filter { it.id != source && canCreateRelation(tree, mode, source, it.id) }
+            .sortedBy { it.name.sortKey }
+
+    private fun secondParentCandidates(tree: FamilyTree, mode: RelationMode, source: PersonId): List<Person> =
+        if (mode == RelationMode.CHILD) {
+            tree.persons.values.filter { it.id != source }.sortedBy { it.name.sortKey }
+        } else {
+            emptyList()
+        }
 
     fun updateRelationDialog(dialog: RelationDialogState): AppState {
         state = state.copy(relationDialog = dialog)
@@ -314,9 +330,11 @@ class AppController(
         val relation = state.relationDialog ?: return state
         val tree = commandBus?.tree?.value ?: return state
         val requiredGender = if (relation.mode == RelationMode.SPOUSE) relation.source.gender.opposite() else null
+        val surname = if (relation.mode == RelationMode.CHILD) relation.source.name.surname else ""
         state = state.copy(
             personForm = validatePersonForm(
                 PersonFormState(
+                    surname = surname,
                     gender = requiredGender ?: Gender.UNKNOWN,
                     requiredGender = requiredGender,
                     customFieldSuggestions = customFieldSuggestions(tree),
@@ -334,7 +352,7 @@ class AppController(
         val editor = commandBus?.let(::RelationEditor) ?: return state
         val result = when (dialog.mode) {
             RelationMode.PARENT -> editor.addParent(target, dialog.source.id, dialog.parentKind)
-            RelationMode.CHILD -> editor.addChild(dialog.source.id, target, dialog.parentKind)
+            RelationMode.CHILD -> editor.addChild(dialog.source.id, target, dialog.parentKind, dialog.secondParent)
             RelationMode.SPOUSE -> when (val details = dialog.marriageDetails()) {
                 is Outcome.Ok -> editor.addSpouse(
                     dialog.source.id,
@@ -366,9 +384,10 @@ class AppController(
     private fun startRelationFromDrag(source: PersonId, target: PersonId, screenPosition: Point): AppState {
         val tree = commandBus?.tree?.value ?: return state
         val validity = RelationMode.entries.associateWith { mode -> canCreateRelation(tree, mode, source, target) }
+        val sourceGender = tree.person(source)?.gender ?: Gender.UNKNOWN
         state = state.copy(
             canvas = state.canvas.copy(nodeDrag = null),
-            dragRelationMenu = DragRelationMenuState(source, target, screenPosition, validity),
+            dragRelationMenu = DragRelationMenuState(source, target, screenPosition, validity, sourceGender),
         )
         return state
     }
@@ -381,7 +400,8 @@ class AppController(
             relationDialog = RelationDialogState(
                 mode = mode,
                 source = source,
-                people = tree.persons.values.filter { it.id != source.id }.sortedBy { it.name.sortKey },
+                people = eligibleRelationCandidates(tree, mode, source.id),
+                secondParentCandidates = secondParentCandidates(tree, mode, source.id),
                 selected = menu.target,
             ),
             dragRelationMenu = null,
@@ -534,11 +554,7 @@ class AppController(
                 val target = drag?.hoverTarget
                 when {
                     drag == null -> state.copy(canvas = canvas)
-                    target == null -> {
-                        val rect = drag.currentRect
-                        pinNode(drag.nodeId.toPersonId(), Point(rect.left, rect.top))
-                    }
-
+                    target == null -> state.copy(canvas = canvas.copy(nodeDrag = null))
                     else -> startRelationFromDrag(
                         drag.nodeId.toPersonId(),
                         target.toPersonId(),
@@ -594,7 +610,8 @@ class AppController(
             RelationMode.CHILD -> RelationEditor(bus).addChildWithPerson(
                 person,
                 relation.source.id,
-                relation.parentKind
+                relation.parentKind,
+                relation.secondParent,
             )
 
             RelationMode.SPOUSE -> when (val details = relation.marriageDetails()) {
@@ -662,11 +679,8 @@ class AppController(
             direction = state.layoutDirection,
         )
         val mediaRepository = project?.mediaRepository ?: me.terevo.domain.port.MediaRepository.NONE
-        val pinned = state.pinnedPositions.mapNotNull { (id, point) ->
-            tree.person(id)?.let { id.toNodeId() to point }
-        }.toMap()
         val mapped =
-            TreeCanvasMapper.map(tree, options, mediaRepository, pinned).copy(viewport = state.canvas.viewport)
+            TreeCanvasMapper.map(tree, options, mediaRepository).copy(viewport = state.canvas.viewport)
         return if (mapped.viewport.width > 0.0 && mapped.viewport.height > 0.0 && mapped.layout.nodes.isNotEmpty()) {
             reduceTreeCanvas(mapped, TreeCanvasIntent.FitToScreen)
         } else {
@@ -704,13 +718,20 @@ class AppController(
         val spouses = relations.filterIsInstance<Marriage>().mapNotNull { relation ->
             relation.spouseOf(selected ?: return@mapNotNull null)?.let(tree::person)
         }
+        val spouseMarriages = relations.filterIsInstance<Marriage>().mapNotNull { relation ->
+            val spouseId = relation.spouseOf(selected ?: return@mapNotNull null) ?: return@mapNotNull null
+            tree.person(spouseId)?.let { SpouseInfo(it, relation) }
+        }
         val relatedPeople = selected?.let { KinshipRoles.resolve(tree, it) }.orEmpty()
+        val mediaRepository = project?.mediaRepository ?: MediaRepository.NONE
         val selectedMedia = person?.mediaIds.orEmpty().mapNotNull { id ->
-            when (val media = project?.mediaRepository?.find(id)) {
+            when (val media = mediaRepository.find(id)) {
                 is Outcome.Ok -> media.value
-                is Outcome.Err, null -> null
+                is Outcome.Err -> null
             }
         }
+        val selectedPersonPhotoPath = person?.mainPhotoPath(mediaRepository)
+        val selectedMediaThumbnails = selectedMedia.associate { it.id to mediaRepository.imagePathOf(it) }
         val highlight = TreeHighlight(
             selected = person?.id?.toNodeId(),
             roles = relatedPeople.associate { it.person.id.toNodeId() to it.role },
@@ -728,7 +749,10 @@ class AppController(
             selectedParents = parents,
             selectedChildren = children,
             selectedSpouses = spouses,
+            selectedSpouseMarriages = spouseMarriages,
             selectedMedia = selectedMedia,
+            selectedPersonPhotoPath = selectedPersonPhotoPath,
+            selectedMediaThumbnails = selectedMediaThumbnails,
             relatedPeople = relatedPeople,
         )
     }
@@ -804,17 +828,11 @@ class AppController(
         project?.close()
         project = opened
         commandBus = CommandBus(initial = tree, repository = opened.repository)
-        val pinned = when (val loaded = opened.nodePositionRepository.loadAll()) {
-            is Outcome.Ok -> loaded.value.mapValues { (_, position) -> Point(position.first, position.second) }
-            is Outcome.Err -> emptyMap()
-        }
-        state = state.copy(pinnedPositions = pinned)
         val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
         state = AppState(
             isProjectOpen = true,
             projectName = opened.location.displayName,
             personCount = tree.size,
-            pinnedPositions = pinned,
             canvas = mappedCanvas(tree),
             status = "",
             themeMode = state.themeMode,

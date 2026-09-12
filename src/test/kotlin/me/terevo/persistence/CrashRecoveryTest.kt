@@ -74,8 +74,15 @@ class CrashRecoveryTest {
         val confirmed = process.inputStream.bufferedReader().use { reader ->
             countConfirmed(reader, process)
         }
-        process.destroyForcibly()
-        process.waitFor(KILL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        process.outputStream.bufferedWriter().use { writer ->
+            writer.write("crash")
+            writer.newLine()
+            writer.flush()
+        }
+        assertTrue(
+            process.waitFor(KILL_TIMEOUT_SECONDS, TimeUnit.SECONDS),
+            "child did not halt after receiving the crash signal",
+        )
         return confirmed
     }
 

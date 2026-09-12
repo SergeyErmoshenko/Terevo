@@ -12,7 +12,9 @@
       "Bash(true)",
       "mcp__dpWiki__dp_wixie_search",
       "mcp__dpWiki__dp_wixie_get",
-      "Bash(cp *)"
+      "Bash(cp *)",
+      "Bash(xargs *)",
+      "Bash(tail *)"
     ]
   },
   "$version": 4

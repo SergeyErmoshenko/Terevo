@@ -29,7 +29,7 @@ class EdgeRouterTest {
     }
 
     @Test
-    fun `two parents share the centre of their pair`() {
+    fun `each parent draws an independent line into the shared child`() {
         val father = parentage("father", "child")
         val mother = parentage("mother", "child")
         val layout = layoutOf(
@@ -37,8 +37,17 @@ class EdgeRouterTest {
             listOf(union("father", "mother"), father, mother),
         )
 
-        assertEquals(Point(176.0, 64.0), layout.edges.first { it.edge == father }.segments.first())
-        assertEquals(Point(176.0, 64.0), layout.edges.first { it.edge == mother }.segments.first())
+        val fatherRect = layout.nodes.getValue(NodeId("father"))
+        val motherRect = layout.nodes.getValue(NodeId("mother"))
+        val childRect = layout.nodes.getValue(NodeId("child"))
+        val fatherPath = layout.edges.first { it.edge == father }
+        val motherPath = layout.edges.first { it.edge == mother }
+
+        assertEquals(fatherRect.bottomCenter, fatherPath.segments.first())
+        assertEquals(motherRect.bottomCenter, motherPath.segments.first())
+        assertEquals(childRect.topCenter, fatherPath.segments.last())
+        assertEquals(childRect.topCenter, motherPath.segments.last())
+        assertEquals(fatherPath.segments[1].y, motherPath.segments[1].y)
     }
 
     @Test
@@ -49,20 +58,10 @@ class EdgeRouterTest {
     }
 
     @Test
-    fun `marriage connects facing card edges`() {
+    fun `union edges are not rendered as connectors`() {
         val edge = union("first", "second")
 
-        assertEquals(
-            EdgePath(edge, listOf(Point(160.0, 32.0), Point(192.0, 32.0)), EdgeStyle.MARRIAGE),
-            layoutOf(listOf("first", "second"), listOf(edge)).edges.single(),
-        )
-    }
-
-    @Test
-    fun `dissolved marriage has dedicated style`() {
-        val edge = union("first", "second", dissolved = true)
-
-        assertEquals(EdgeStyle.DISSOLVED_MARRIAGE, layoutOf(listOf("first", "second"), listOf(edge)).edges.single().style)
+        assertTrue(layoutOf(listOf("first", "second"), listOf(edge)).edges.isEmpty())
     }
 
     @Test
@@ -108,8 +107,8 @@ class EdgeRouterTest {
         val x = vertical.first.x
         val y = horizontal.first.y
         return x > minOf(horizontal.first.x, horizontal.second.x) &&
-            x < maxOf(horizontal.first.x, horizontal.second.x) &&
-            y > minOf(vertical.first.y, vertical.second.y) &&
-            y < maxOf(vertical.first.y, vertical.second.y)
+                x < maxOf(horizontal.first.x, horizontal.second.x) &&
+                y > minOf(vertical.first.y, vertical.second.y) &&
+                y < maxOf(vertical.first.y, vertical.second.y)
     }
 }

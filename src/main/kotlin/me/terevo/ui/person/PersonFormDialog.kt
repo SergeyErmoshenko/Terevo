@@ -148,6 +148,20 @@ fun PersonFormDialog(
                     Text(Strings.ADD_MEDIA, modifier = Modifier.padding(start = spacing.small))
                 }
                 Text(Strings.CUSTOM_FIELDS)
+                state.customFieldSuggestions
+                    .filter { suggestion -> state.customFields.none { it.key.equals(suggestion, ignoreCase = true) } }
+                    .take(CUSTOM_FIELD_SUGGESTION_LIMIT)
+                    .forEach { suggestion ->
+                        OutlinedButton(
+                            onClick = {
+                                onChange(
+                                    validatePersonForm(
+                                        state.copy(customFields = state.customFields + CustomFieldInput(key = suggestion)),
+                                    ),
+                                )
+                            },
+                        ) { Text(suggestion) }
+                    }
                 state.customFields.forEachIndexed { index, field ->
                     PersonField(Strings.CUSTOM_FIELD_KEY, field.key) { key ->
                         onChange(

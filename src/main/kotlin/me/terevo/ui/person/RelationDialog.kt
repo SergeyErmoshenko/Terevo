@@ -31,12 +31,28 @@ data class RelationDialogState(
     val marriageStatus: MarriageStatus = MarriageStatus.MARRIED,
     val marriageSince: EventDateInput = EventDateInput(),
     val marriagePlace: String = "",
+    val secondParentCandidates: List<Person> = emptyList(),
+    val secondParent: PersonId? = null,
+    val secondParentQuery: String = "",
     val error: String? = null,
 ) {
     val filteredPeople: List<Person>
         get() {
             val normalized = query.trim().lowercase()
-            return people.filter { normalized.isEmpty() || normalized in it.name.display.lowercase() }
+            val candidates = if (mode == RelationMode.SPOUSE) {
+                source.gender.opposite()?.let { required -> people.filter { it.gender == required } } ?: people
+            } else {
+                people
+            }
+            return candidates.filter { normalized.isEmpty() || normalized in it.name.display.lowercase() }
+        }
+
+    val filteredSecondParentCandidates: List<Person>
+        get() {
+            val normalized = secondParentQuery.trim().lowercase()
+            return secondParentCandidates
+                .filter { it.id != selected }
+                .filter { normalized.isEmpty() || normalized in it.name.display.lowercase() }
         }
 }
 
@@ -55,7 +71,7 @@ fun RelationDialog(
     val spacing = TerevoTheme.spacing
     AlertDialog(
         onDismissRequest = onCancel,
-        title = { Text(state.mode.title) },
+        title = { Text(state.dialogTitle()) },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -82,7 +98,26 @@ fun RelationDialog(
                     EnumOptions(ParentKind.entries, state.parentKind, ParentKind::label) {
                         onChange(state.copy(parentKind = it, error = null))
                     }
-                } else {
+                }
+                if (state.mode == RelationMode.CHILD) {
+                    Text(Strings.SECOND_PARENT)
+                    OutlinedTextField(
+                        value = state.secondParentQuery,
+                        onValueChange = { onChange(state.copy(secondParentQuery = it, error = null)) },
+                        label = { Text(Strings.SEARCH) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
+                    SelectableOption(state.secondParent == null, Strings.SECOND_PARENT_NONE) {
+                        onChange(state.copy(secondParent = null, error = null))
+                    }
+                    state.filteredSecondParentCandidates.forEach { person ->
+                        SelectableOption(state.secondParent == person.id, person.name.display) {
+                            onChange(state.copy(secondParent = person.id, error = null))
+                        }
+                    }
+                }
+                if (state.mode != RelationMode.PARENT && state.mode != RelationMode.CHILD) {
                     EnumOptions(MarriageStatus.entries, state.marriageStatus, MarriageStatus::label) {
                         onChange(state.copy(marriageStatus = it, error = null))
                     }
@@ -118,12 +153,11 @@ private fun <T> EnumOptions(values: List<T>, selected: T, label: (T) -> String, 
     }
 }
 
-private val RelationMode.title: String
-    get() = when (this) {
-        RelationMode.PARENT -> Strings.ADD_PARENT
-        RelationMode.CHILD -> Strings.ADD_CHILD
-        RelationMode.SPOUSE -> Strings.ADD_SPOUSE
-    }
+private fun RelationDialogState.dialogTitle(): String = when (mode) {
+    RelationMode.PARENT -> Strings.ADD_PARENT
+    RelationMode.CHILD -> Strings.ADD_CHILD
+    RelationMode.SPOUSE -> source.gender.spouseActionLabel()
+}
 
 private fun ParentKind.label(): String = when (this) {
     ParentKind.BIOLOGICAL -> "Биологический"
@@ -132,7 +166,7 @@ private fun ParentKind.label(): String = when (this) {
     ParentKind.FOSTER -> "Опекун"
 }
 
-private fun MarriageStatus.label(): String = when (this) {
+internal fun MarriageStatus.label(): String = when (this) {
     MarriageStatus.MARRIED -> "В браке"
     MarriageStatus.DIVORCED -> "Разведены"
     MarriageStatus.WIDOWED -> "Вдовство"

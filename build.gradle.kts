@@ -94,6 +94,7 @@ val sqliteNativeDir: File = layout.buildDirectory.dir("tmp/sqlite-native").get()
 tasks.test {
     useJUnitPlatform()
     systemProperty("org.sqlite.tmpdir", sqliteNativeDir.absolutePath)
+    systemProperty("java.awt.headless", "true")
     doFirst {
         sqliteNativeDir.mkdirs()
     }
