@@ -24,6 +24,8 @@ object Strings {
     const val SEARCH_FILTERS: String = "Поиск и фильтры"
     const val COLLAPSE_SIDEBAR: String = "Свернуть панель"
     const val EXPAND_SIDEBAR: String = "Развернуть панель"
+    const val COLLAPSE_SEARCH_FILTERS: String = "Свернуть поиск и фильтры"
+    const val EXPAND_SEARCH_FILTERS: String = "Развернуть поиск и фильтры"
     const val SEARCH_PLACE: String = "Место"
     const val SEARCH_BIRTH_FROM: String = "Год рождения от"
     const val SEARCH_BIRTH_TO: String = "Год рождения до"

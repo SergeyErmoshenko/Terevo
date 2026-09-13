@@ -25,25 +25,59 @@ class EdgeRouterTest {
     }
 
     @Test
-    fun `each parent draws an independent line into the shared child`() {
+    fun `married parents with a shared child draw one common bracket instead of a direct connector`() {
+        val marriage = union("father", "mother")
         val father = parentage("father", "child")
         val mother = parentage("mother", "child")
         val layout = layoutOf(
             listOf("father", "mother", "child"),
-            listOf(union("father", "mother"), father, mother),
+            listOf(marriage, father, mother),
         )
 
-        val fatherRect = layout.nodes.getValue(NodeId("father"))
-        val motherRect = layout.nodes.getValue(NodeId("mother"))
         val childRect = layout.nodes.getValue(NodeId("child"))
         val fatherPath = layout.edges.first { it.edge == father }
         val motherPath = layout.edges.first { it.edge == mother }
 
-        assertEquals(fatherRect.bottomCenter, fatherPath.segments.first())
-        assertEquals(motherRect.bottomCenter, motherPath.segments.first())
+        assertTrue(layout.edges.none { it.edge == marriage })
+        assertEquals(fatherPath.segments, motherPath.segments)
         assertEquals(childRect.topCenter, fatherPath.segments.last())
-        assertEquals(childRect.topCenter, motherPath.segments.last())
-        assertEquals(fatherPath.segments[1].y, motherPath.segments[1].y)
+    }
+
+    @Test
+    fun `married parents with two shared children get one spine branching into each child`() {
+        val marriage = union("father", "mother")
+        val toChildA = parentage("father", "childA")
+        val toChildB = parentage("mother", "childB")
+        val layout = layoutOf(
+            listOf("father", "mother", "childA", "childB"),
+            listOf(marriage, toChildA, parentage("mother", "childA"), toChildB, parentage("father", "childB")),
+        )
+
+        val paths = layout.edges.filter { it.edge is LayoutEdge.Parentage }
+        val spineStart = paths.first().segments.first()
+
+        assertTrue(layout.edges.none { it.edge == marriage })
+        assertTrue(paths.all { it.segments.first() == spineStart })
+        assertEquals(4, paths.size)
+    }
+
+    @Test
+    fun `childless couple is connected by a direct line`() {
+        val marriage = union("first", "second")
+        val layout = layoutOf(listOf("first", "second"), listOf(marriage))
+
+        val path = layout.edges.single()
+        assertEquals(marriage, path.edge)
+        assertEquals(EdgeStyle.MARRIAGE, path.style)
+        assertEquals(2, path.segments.size)
+    }
+
+    @Test
+    fun `dissolved childless couple is styled as a dissolved marriage`() {
+        val marriage = union("first", "second", dissolved = true)
+        val layout = layoutOf(listOf("first", "second"), listOf(marriage))
+
+        assertEquals(EdgeStyle.DISSOLVED_MARRIAGE, layout.edges.single().style)
     }
 
     @Test
@@ -54,10 +88,16 @@ class EdgeRouterTest {
     }
 
     @Test
-    fun `union edges are not rendered as connectors`() {
-        val edge = union("first", "second")
+    fun `unmarried co-parents still land on different points of the child`() {
+        val father = parentage("father", "child")
+        val mother = parentage("mother", "child")
+        val layout = layoutOf(listOf("father", "mother", "child"), listOf(father, mother))
 
-        assertTrue(layoutOf(listOf("first", "second"), listOf(edge)).edges.isEmpty())
+        val fatherPath = layout.edges.first { it.edge == father }
+        val motherPath = layout.edges.first { it.edge == mother }
+
+        assertTrue(fatherPath.segments.last().x != motherPath.segments.last().x)
+        assertTrue(fatherPath.segments[1].y == motherPath.segments[1].y)
     }
 
     @Test

@@ -71,15 +71,19 @@ object GedcomCodec {
                     ).ok(),
                 )
             }
-            record.filter { it.level == 1 && it.tag == "CHIL" }.forEach { childLine ->
+            val childLines = record.withIndex().filter { (_, line) -> line.level == 1 && line.tag == "CHIL" }
+            childLines.forEach { (index, childLine) ->
                 val child = people[childLine.value] ?: return@forEach
+                val pedigree = record.drop(index + 1).takeWhile { it.level > 1 }
+                    .firstOrNull { it.level == 2 && it.tag == "PEDI" }?.value
+                val kind = parentKind(pedigree)
                 spouses.forEach { parent ->
                     commands += AddRelation(
-                        ParentChild.of(RelationId.next(), parent.id, child.id, ParentKind.BIOLOGICAL).ok(),
+                        ParentChild.of(RelationId.next(), parent.id, child.id, kind).ok(),
                     )
                 }
             }
-            val known = setOf("FAM", "HUSB", "WIFE", "CHIL", "MARR", "DATE", "PLAC", "NOTE")
+            val known = setOf("FAM", "HUSB", "WIFE", "CHIL", "MARR", "DATE", "PLAC", "NOTE", "PEDI")
             skipped += record.map { it.tag }.filterNot(known::contains)
         }
         Outcome.Ok(GedcomPreview(people.size, families.size, skipped, Batch(commands)))
@@ -117,7 +121,8 @@ object GedcomCodec {
                 husband?.let { appendLine("1 HUSB ${pointers.getValue(it.id)}") }
                 wife?.let { appendLine("1 WIFE ${pointers.getValue(it.id)}") }
                 appendEvent("MARR", marriage.since, null)
-                val commonChildren = tree.childrenOf(marriage.spouseA).intersect(tree.childrenOf(marriage.spouseB).toSet())
+                val commonChildren =
+                    tree.childrenOf(marriage.spouseA).intersect(tree.childrenOf(marriage.spouseB).toSet())
                 commonChildren.forEach { child ->
                     appendLine("1 CHIL ${pointers.getValue(child)}")
                     coveredParentage += parentage.filter {
@@ -161,6 +166,14 @@ private fun records(lines: List<GedcomLine>): List<List<GedcomLine>> {
         if (line.level == 0) result += mutableListOf(line) else result.lastOrNull()?.add(line)
     }
     return result
+}
+
+private fun parentKind(pedigree: String?): ParentKind = when (pedigree?.trim()?.uppercase()) {
+    null, "BIRTH" -> ParentKind.BIOLOGICAL
+    "ADOPTED" -> ParentKind.ADOPTIVE
+    "FOSTER" -> ParentKind.FOSTER
+    "STEP" -> ParentKind.STEP
+    else -> ParentKind.ADOPTIVE
 }
 
 private fun parseName(value: String): Pair<String, String> {

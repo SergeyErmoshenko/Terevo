@@ -44,7 +44,11 @@ object PdfTreeRenderer {
         stream.setStrokingColor(edgeColor(edge.style))
         stream.setLineWidth(EDGE_WIDTH)
         stream.setLineDashPattern(
-            if (edge.style == EdgeStyle.NON_BIOLOGICAL) floatArrayOf(4f, 3f) else floatArrayOf(),
+            if (edge.style == EdgeStyle.NON_BIOLOGICAL || edge.style == EdgeStyle.DISSOLVED_MARRIAGE) {
+                floatArrayOf(4f, 3f)
+            } else {
+                floatArrayOf()
+            },
             0f,
         )
         edge.segments.zipWithNext().forEach { (a, b) ->
@@ -127,7 +131,7 @@ object PdfTreeRenderer {
     }
 
     private fun edgeColor(style: EdgeStyle): Color = when (style) {
-        EdgeStyle.BIOLOGICAL -> Color(0x8A, 0x8F, 0x98)
+        EdgeStyle.BIOLOGICAL, EdgeStyle.MARRIAGE, EdgeStyle.DISSOLVED_MARRIAGE -> Color(0x8A, 0x8F, 0x98)
         EdgeStyle.NON_BIOLOGICAL -> Color(0x3F, 0x51, 0xB5)
     }
 

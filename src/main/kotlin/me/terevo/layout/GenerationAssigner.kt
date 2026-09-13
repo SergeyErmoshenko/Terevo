@@ -43,39 +43,54 @@ internal object GenerationAssigner {
     }
 
     private fun alignPartners(graph: TreeGraph, generations: MutableMap<NodeId, Int>) {
-        val descendants = descendantCounts(graph)
-        for (union in graph.unions.sortedWith(compareBy({ graph.orderOf(it.first) }, { graph.orderOf(it.second) }))) {
-            val firstGeneration = generations.getValue(union.first)
-            val secondGeneration = generations.getValue(union.second)
-            if (firstGeneration == secondGeneration) continue
+        // Co-parents without a recorded marriage still need to land on the same generation as
+        // married partners do, otherwise spouseGroups() (WalkerLayoutEngine) refuses to place them
+        // in one compound group and their shared child ends up owned by two separate root
+        // subtrees, corrupting layout for both.
+        val pairs = (graph.unions.map { it.first to it.second } + coParentPairs(graph))
+            .distinct()
+            .sortedWith(compareBy({ graph.orderOf(it.first) }, { graph.orderOf(it.second) }))
 
-            val firstPriority = descendants.getValue(union.first)
-            val secondPriority = descendants.getValue(union.second)
-            when {
-                firstPriority > secondPriority -> generations[union.second] = firstGeneration
-                secondPriority > firstPriority -> generations[union.first] = secondGeneration
-                graph.orderOf(union.first) <= graph.orderOf(union.second) -> generations[union.second] = firstGeneration
-                else -> generations[union.first] = secondGeneration
+        repeat(pairs.size.coerceAtLeast(1)) {
+            var changed = false
+            for ((first, second) in pairs) {
+                val firstGeneration = generations.getValue(first)
+                val secondGeneration = generations.getValue(second)
+                if (firstGeneration == secondGeneration) continue
+                changed = true
+
+                // Always pull the shallower partner down to match the deeper one, never the
+                // other way around: a node's own generation already reflects the longest path
+                // from a root through it, and its children were placed one generation below that.
+                // Overwriting it with a shallower number (as a plain assignment would) leaves those
+                // already-placed children at the same generation as their parent, or above it.
+                val target = maxOf(firstGeneration, secondGeneration)
+                relax(graph, generations, first, target)
+                relax(graph, generations, second, target)
             }
+            if (!changed) return
         }
     }
 
-    private fun descendantCounts(graph: TreeGraph): Map<NodeId, Int> {
-        val counts = graph.sortedNodeIds().associateWith { 0 }.toMutableMap()
-        val remainingChildren = graph.sortedNodeIds().associateWith { graph.children(it).size }.toMutableMap()
-        val queue = ArrayDeque(graph.sortedNodeIds().filter { remainingChildren.getValue(it) == 0 })
-
-        while (queue.isNotEmpty()) {
-            val child = queue.removeFirst()
-            for (parent in graph.parents(child)) {
-                counts[parent] = counts.getValue(parent) + counts.getValue(child) + 1
-                val remaining = remainingChildren.getValue(parent) - 1
-                remainingChildren[parent] = remaining
-                if (remaining == 0) queue.addLast(parent)
-            }
+    // Raises a node's generation to at least minGeneration and, only where that actually forces
+    // a change, cascades the same requirement to its children one generation deeper — so a shared
+    // child that's already deep enough via another parent is left untouched instead of being
+    // pushed further down than it needs to be.
+    private fun relax(graph: TreeGraph, generations: MutableMap<NodeId, Int>, node: NodeId, minGeneration: Int) {
+        if (generations.getValue(node) >= minGeneration) return
+        generations[node] = minGeneration
+        for (child in graph.children(node)) {
+            relax(graph, generations, child, minGeneration + 1)
         }
-        return counts
     }
+
+    private fun coParentPairs(graph: TreeGraph): List<Pair<NodeId, NodeId>> =
+        graph.sortedNodeIds()
+            .flatMap { child ->
+                val parents = graph.parents(child)
+                parents.indices.flatMap { i -> (i + 1 until parents.size).map { j -> parents[i] to parents[j] } }
+            }
+            .distinct()
 
     private fun connectedComponents(graph: TreeGraph): List<List<NodeId>> {
         val neighbors = graph.sortedNodeIds().associateWith { id ->

@@ -3,6 +3,7 @@ package me.terevo.layout
 import me.terevo.testing.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class GenerationAssignerTest {
 
@@ -62,6 +63,47 @@ class GenerationAssignerTest {
 
         assertEquals(1, generations.getValue(nodeId("shallow")))
         assertEquals(1, generations.getValue(nodeId("deep")))
+    }
+
+    @Test
+    fun `unmarried co-parents with asymmetric ancestor depth are pulled to the same generation`() {
+        val graph = graphOf(
+            nodes = listOf("grandfather", "father", "mother", "child"),
+            edges = listOf(
+                parentage("grandfather", "father"),
+                parentage("father", "child"),
+                parentage("mother", "child"),
+            ),
+        )
+
+        val generations = GenerationAssigner.assign(graph).generations
+
+        assertEquals(generations.getValue(nodeId("father")), generations.getValue(nodeId("mother")))
+    }
+
+    @Test
+    fun `a deeper spouse with fewer descendants is never pulled up above their own parent`() {
+        val graph = graphOf(
+            nodes = listOf("grandparent", "parent", "spouse", "child", "otherChild"),
+            edges = listOf(
+                parentage("grandparent", "parent"),
+                union("parent", "spouse"),
+                parentage("parent", "child"),
+                parentage("spouse", "child"),
+                parentage("spouse", "otherChild"),
+            ),
+        )
+
+        val generations = GenerationAssigner.assign(graph).generations
+
+        val grandparentGen = generations.getValue(nodeId("grandparent"))
+        val parentGen = generations.getValue(nodeId("parent"))
+        val spouseGen = generations.getValue(nodeId("spouse"))
+        val childGen = generations.getValue(nodeId("child"))
+
+        assertEquals(parentGen, spouseGen)
+        assertTrue(grandparentGen < parentGen)
+        assertTrue(parentGen < childGen)
     }
 
     @Test

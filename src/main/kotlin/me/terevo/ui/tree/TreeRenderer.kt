@@ -67,7 +67,7 @@ fun DrawScope.drawTree(
 
 private fun DrawScope.drawEdge(path: EdgePath, camera: Camera, colors: TerevoColors, accent: NodeAccent) {
     val baseColor = when (path.style) {
-        EdgeStyle.BIOLOGICAL -> colors.unknownGender
+        EdgeStyle.BIOLOGICAL, EdgeStyle.MARRIAGE, EdgeStyle.DISSOLVED_MARRIAGE -> colors.unknownGender
         EdgeStyle.NON_BIOLOGICAL -> colors.accent
     }
     val color = when (accent) {
@@ -75,7 +75,11 @@ private fun DrawScope.drawEdge(path: EdgePath, camera: Camera, colors: TerevoCol
         NodeAccent.MUTED -> baseColor.copy(alpha = MUTED_ALPHA)
         NodeAccent.NEUTRAL -> baseColor
     }
-    val effect = if (path.style == EdgeStyle.NON_BIOLOGICAL) PathEffect.dashPathEffect(floatArrayOf(8f, 6f)) else null
+    val effect = if (path.style == EdgeStyle.NON_BIOLOGICAL || path.style == EdgeStyle.DISSOLVED_MARRIAGE) {
+        PathEffect.dashPathEffect(floatArrayOf(8f, 6f))
+    } else {
+        null
+    }
     path.segments.zipWithNext().forEach { (start, end) ->
         drawLine(
             color = color,
@@ -203,6 +207,10 @@ private fun DrawScope.drawPerson(
         val label = textMeasurer.measure(
             role,
             TextStyle(color = colors.accent, fontSize = (ROLE_SIZE * camera.scale / density).sp),
+            overflow = TextOverflow.Ellipsis,
+            softWrap = false,
+            maxLines = 1,
+            constraints = Constraints(maxWidth = size.width.roundToInt()),
         )
         val roleTop = topLeft.y - label.size.height - (ROLE_GAP * camera.scale).toFloat()
         drawText(label, topLeft = Offset(topLeft.x, roleTop))

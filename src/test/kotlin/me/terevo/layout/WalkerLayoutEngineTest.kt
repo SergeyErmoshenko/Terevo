@@ -56,11 +56,116 @@ class WalkerLayoutEngineTest {
     }
 
     @Test
+    fun `golden unmarried co-parents are grouped adjacent to their shared child`() {
+        assertGolden(
+            graphOf(
+                listOf("father", "mother", "child"),
+                listOf(parentage("father", "child"), parentage("mother", "child")),
+            ),
+            "child=96,160|father=0,0|mother=192,0",
+        )
+    }
+
+    @Test
     fun `golden adoption uses the same geometry as parentage`() {
         assertGolden(
             graphOf(listOf("parent", "child"), listOf(parentage("parent", "child", biological = false))),
             "child=0,160|parent=0,0",
         )
+    }
+
+    @Test
+    fun `widest root subtree is balanced toward the center instead of alphabetical order`() {
+        val graph = graphOf(
+            listOf("a_wide", "c1", "c2", "c3", "m_narrow1", "n1", "z_narrow2", "n2"),
+            listOf(
+                parentage("a_wide", "c1"),
+                parentage("a_wide", "c2"),
+                parentage("a_wide", "c3"),
+                parentage("m_narrow1", "n1"),
+                parentage("z_narrow2", "n2"),
+            ),
+        )
+
+        val layout = engine.layout(LayoutRequest(graph, metrics))
+
+        val wideCenter = layout.rectOf(nodeId("a_wide"))!!.centerX
+        val narrow1Center = layout.rectOf(nodeId("m_narrow1"))!!.centerX
+        val narrow2Center = layout.rectOf(nodeId("z_narrow2"))!!.centerX
+
+        assertTrue(wideCenter in minOf(narrow1Center, narrow2Center)..maxOf(narrow1Center, narrow2Center))
+        assertNoOverlaps(layout)
+    }
+
+    @Test
+    fun `a narrow branch nested under a common ancestor is balanced among its siblings, not shoved to alphabetical order`() {
+        val graph = graphOf(
+            listOf("top", "wide", "w1", "w2", "w3", "narrow_a", "narrow_z"),
+            listOf(
+                parentage("top", "wide"),
+                parentage("top", "narrow_a"),
+                parentage("top", "narrow_z"),
+                parentage("wide", "w1"),
+                parentage("wide", "w2"),
+                parentage("wide", "w3"),
+            ),
+        )
+
+        val layout = engine.layout(LayoutRequest(graph, metrics))
+
+        val wideCenter = layout.rectOf(nodeId("wide"))!!.centerX
+        val narrowACenter = layout.rectOf(nodeId("narrow_a"))!!.centerX
+        val narrowZCenter = layout.rectOf(nodeId("narrow_z"))!!.centerX
+
+        assertTrue(wideCenter in minOf(narrowACenter, narrowZCenter)..maxOf(narrowACenter, narrowZCenter))
+        assertNoOverlaps(layout)
+    }
+
+    @Test
+    fun `unmarried co-parents with asymmetric ancestor depth are placed side by side, not stacked`() {
+        val graph = graphOf(
+            nodes = listOf("grandfather", "father", "mother", "child"),
+            edges = listOf(
+                parentage("grandfather", "father"),
+                parentage("father", "child"),
+                parentage("mother", "child"),
+            ),
+        )
+
+        val layout = engine.layout(LayoutRequest(graph, metrics))
+
+        val fatherRect = layout.rectOf(nodeId("father"))!!
+        val motherRect = layout.rectOf(nodeId("mother"))!!
+        assertEquals(fatherRect.top, motherRect.top)
+        assertFalse(fatherRect.intersects(motherRect))
+        assertNoOverlaps(layout)
+        assertEquals(layout, engine.layout(LayoutRequest(graph, metrics)))
+    }
+
+    @Test
+    fun `a couple whose two members each bring their own parents keeps both ancestor lineages anchored above the couple`() {
+        val graph = graphOf(
+            nodes = listOf("fatherGrandfather", "motherGrandfather", "father", "mother", "child"),
+            edges = listOf(
+                parentage("fatherGrandfather", "father"),
+                parentage("motherGrandfather", "mother"),
+                union("father", "mother"),
+                parentage("father", "child"),
+                parentage("mother", "child"),
+            ),
+        )
+
+        val layout = engine.layout(LayoutRequest(graph, metrics))
+
+        val coupleLeft = layout.rectOf(nodeId("father"))!!.left
+        val coupleRight = layout.rectOf(nodeId("mother"))!!.right
+        val fatherGrandfatherCenter = layout.rectOf(nodeId("fatherGrandfather"))!!.centerX
+        val motherGrandfatherCenter = layout.rectOf(nodeId("motherGrandfather"))!!.centerX
+
+        assertTrue(fatherGrandfatherCenter in coupleLeft..coupleRight)
+        assertTrue(motherGrandfatherCenter in coupleLeft..coupleRight)
+        assertNoOverlaps(layout)
+        assertEquals(layout, engine.layout(LayoutRequest(graph, metrics)))
     }
 
     @Test
@@ -81,9 +186,11 @@ class WalkerLayoutEngineTest {
 
         val layout = engine.layout(LayoutRequest(graph, metrics))
 
+        val minLeft = children.minOf { layout.rectOf(nodeId(it))!!.left }
+        val maxRight = children.maxOf { layout.rectOf(nodeId(it))!!.right }
         assertEquals(Rect(18_308.0, 0.0, 160.0, 64.0), layout.rectOf(nodeId("parent")))
-        assertEquals(Rect(0.0, 160.0, 160.0, 64.0), layout.rectOf(nodeId("child000")))
-        assertEquals(Rect(36_616.0, 160.0, 160.0, 64.0), layout.rectOf(nodeId("child199")))
+        assertEquals(0.0, minLeft)
+        assertEquals(36_776.0, maxRight)
         assertNoOverlaps(layout)
         assertEquals(layout, engine.layout(LayoutRequest(graph, metrics)))
     }

@@ -8,7 +8,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -52,6 +54,7 @@ data class GedcomImportState(
     val families: Int,
     val skippedTags: Set<String>,
     val command: Batch,
+    val error: String? = null,
 )
 
 data class MediaViewerState(
@@ -59,7 +62,29 @@ data class MediaViewerState(
     val content: ByteArray,
     val zoom: Float = 1f,
     val page: Int = 0,
-)
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+
+        other as MediaViewerState
+
+        if (zoom != other.zoom) return false
+        if (page != other.page) return false
+        if (media != other.media) return false
+        if (!content.contentEquals(other.content)) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = zoom.hashCode()
+        result = 31 * result + page
+        result = 31 * result + media.hashCode()
+        result = 31 * result + content.contentHashCode()
+        return result
+    }
+}
 
 private fun ByteArray.pdfPageCount(): Int = Loader.loadPDF(this).use { it.numberOfPages }
 
@@ -347,6 +372,7 @@ fun App(
                     if (preview.skippedTags.isNotEmpty()) {
                         Text("${Strings.GEDCOM_SKIPPED}: ${preview.skippedTags.sorted().joinToString()}")
                     }
+                    preview.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 }
             },
             confirmButton = {
@@ -586,6 +612,7 @@ private fun MainTreeTab(state: AppState, onAction: (AppAction) -> Unit) {
 private fun ProjectSidebar(state: AppState, onAction: (AppAction) -> Unit) {
     val spacing = TerevoTheme.spacing
     val colors = TerevoTheme.colors
+    var searchFiltersCollapsed by remember { mutableStateOf(false) }
     Column(
         modifier = Modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(spacing.small),
@@ -605,14 +632,28 @@ private fun ProjectSidebar(state: AppState, onAction: (AppAction) -> Unit) {
                 modifier = Modifier.padding(spacing.small),
                 verticalArrangement = Arrangement.spacedBy(spacing.small),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { searchFiltersCollapsed = !searchFiltersCollapsed },
+                ) {
                     Icon(TablerIcons.Filter, contentDescription = null, tint = colors.accent)
                     Text(
                         Strings.SEARCH_FILTERS,
-                        modifier = Modifier.padding(start = spacing.small),
+                        modifier = Modifier.padding(start = spacing.small).weight(1f),
                         style = MaterialTheme.typography.titleMedium,
                     )
+                    Icon(
+                        if (searchFiltersCollapsed) TablerIcons.ChevronDown else TablerIcons.ChevronUp,
+                        contentDescription = if (searchFiltersCollapsed) {
+                            Strings.EXPAND_SEARCH_FILTERS
+                        } else {
+                            Strings.COLLAPSE_SEARCH_FILTERS
+                        },
+                    )
                 }
+                if (searchFiltersCollapsed) return@Column
                 OutlinedTextField(
                     value = state.searchFilter.query,
                     onValueChange = { onAction(AppAction.ChangeSearchFilter(state.searchFilter.copy(query = it))) },

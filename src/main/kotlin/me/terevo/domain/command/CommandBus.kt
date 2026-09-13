@@ -1,5 +1,6 @@
 package me.terevo.domain.command
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -8,6 +9,8 @@ import me.terevo.domain.Outcome
 import me.terevo.domain.invariant.ValidationWarning
 import me.terevo.domain.model.FamilyTree
 import me.terevo.domain.port.TreeRepository
+
+private val logger = KotlinLogging.logger {}
 
 class CommandBus(
     initial: FamilyTree = FamilyTree.EMPTY,
@@ -31,12 +34,22 @@ class CommandBus(
     val nextRedo: Command? get() = redoStack.lastOrNull()
 
     fun execute(command: Command): Outcome<List<ValidationWarning>> {
+        logger.info { "Command execution started: type=${command::class.simpleName}" }
         val result = when (val applied = command.applyTo(mutableTree.value)) {
             is Outcome.Ok -> applied.value
-            is Outcome.Err -> return applied
+            is Outcome.Err -> {
+                logger.warn { "Command validation failed: type=${command::class.simpleName}, error=${applied.error}" }
+                return applied
+            }
         }
+        logger.info { "Command validation completed: type=${command::class.simpleName}, changes=${result.changes.size}" }
+        logger.info { "Command persistence started: changes=${result.changes.size}" }
         val persisted = repository.apply(result.changes)
-        if (persisted is Outcome.Err) return persisted
+        if (persisted is Outcome.Err) {
+            logger.error { "Command persistence failed: changes=${result.changes.size}, error=${persisted.error}" }
+            return persisted
+        }
+        logger.info { "Command persistence completed: changes=${result.changes.size}" }
         mutableTree.value = result.tree
         push(undoStack, result.inverse)
         redoStack.clear()

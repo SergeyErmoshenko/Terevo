@@ -82,8 +82,7 @@ fun main() = application {
                 AppAction.OpenProject -> dialogs.chooseOpen()?.let { appState = controller.open(it) }
                 AppAction.NewProjectFromGedcom -> dialogs.chooseCreate()?.let { location ->
                     dialogs.chooseGedcomImport()?.let { path ->
-                        appState = controller.create(location)
-                        appState = controller.previewGedcom(path)
+                        appState = controller.createFromGedcom(location, path)
                     }
                 }
 

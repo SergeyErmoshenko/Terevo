@@ -1,5 +1,10 @@
 package me.terevo.ui.tree
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector3D
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.TwoWayConverter
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -27,6 +32,8 @@ import me.terevo.ui.Strings
 import me.terevo.ui.person.RelationMode
 import me.terevo.ui.person.spouseActionLabel
 import me.terevo.ui.theme.TerevoTheme
+import kotlin.math.abs
+import kotlin.math.pow
 
 private data class PersonContextMenu(val nodeId: NodeId, val position: Offset)
 
@@ -43,6 +50,14 @@ fun TreeCanvas(
     val density = LocalDensity.current.density
     val latestState = rememberUpdatedState(state)
     var contextMenu by remember { mutableStateOf<PersonContextMenu?>(null) }
+    val animatedCamera = remember { Animatable(state.camera, CameraVectorConverter) }
+    LaunchedEffect(state.camera) {
+        if (state.camera.scale != animatedCamera.value.scale) {
+            animatedCamera.animateTo(state.camera, animationSpec = tween(300, easing = LinearEasing))
+        } else {
+            animatedCamera.snapTo(state.camera)
+        }
+    }
     Box(modifier) {
         Canvas(
             Modifier
@@ -57,7 +72,13 @@ fun TreeCanvas(
                             val event = awaitPointerEvent()
                             if (event.type != PointerEventType.Scroll) continue
                             val change = event.changes.firstOrNull() ?: continue
-                            val factor = if (change.scrollDelta.y > 0f) ZOOM_OUT else ZOOM_IN
+                            // A trackpad fires many more scroll events per gesture than a wheel
+                            // mouse's discrete notches, each with a smaller delta. Scaling the
+                            // factor by that delta's magnitude (instead of a fixed step per event)
+                            // keeps zoom speed proportional to actual scroll input regardless of
+                            // how often the device reports events.
+                            val magnitude = abs(change.scrollDelta.y).toDouble().coerceIn(0.0, MAX_SCROLL_MAGNITUDE)
+                            val factor = ZOOM_SENSITIVITY.pow(if (change.scrollDelta.y > 0f) -magnitude else magnitude)
                             onIntent(TreeCanvasIntent.Zoom(change.position.toPoint(), factor))
                         }
                     }
@@ -112,21 +133,22 @@ fun TreeCanvas(
                     }
                 },
         ) {
-            val viewport = state.camera.visibleWorld(size.width.toDouble(), size.height.toDouble())
-            drawDotGrid(state.camera, colors, viewport)
+            val camera = animatedCamera.value
+            val viewport = camera.visibleWorld(size.width.toDouble(), size.height.toDouble())
+            drawDotGrid(camera, colors, viewport)
             val visible = state.spatialIndex.visible(state.layout, viewport)
             val layout = state.layout.copy(nodes = visible.nodes, edges = visible.edges)
             drawTree(
                 layout,
                 state.visuals,
-                state.camera,
+                camera,
                 colors,
                 textMeasurer,
                 state.highlight,
                 cornerRadiusPx,
                 density
             )
-            state.nodeDrag?.let { drawDragPreview(it, state.layout, state.camera, colors, cornerRadiusPx) }
+            state.nodeDrag?.let { drawDragPreview(it, state.layout, camera, colors, cornerRadiusPx) }
         }
         contextMenu?.let { menu ->
             val offset = with(LocalDensity.current) { DpOffset(menu.position.x.toDp(), menu.position.y.toDp()) }
@@ -167,5 +189,21 @@ fun TreeCanvas(
 
 private fun Offset.toPoint(): Point = Point(x.toDouble(), y.toDouble())
 
-private const val ZOOM_IN: Double = 1.1
-private const val ZOOM_OUT: Double = 1.0 / ZOOM_IN
+private val CameraVectorConverter = TwoWayConverter<Camera, AnimationVector3D>(
+    convertToVector = { camera ->
+        AnimationVector3D(
+            camera.scale.toFloat(),
+            camera.offset.x.toFloat(),
+            camera.offset.y.toFloat()
+        )
+    },
+    convertFromVector = { vector ->
+        Camera(
+            scale = vector.v1.toDouble(),
+            offset = Point(vector.v2.toDouble(), vector.v3.toDouble())
+        )
+    },
+)
+
+private const val ZOOM_SENSITIVITY: Double = 1.035
+private const val MAX_SCROLL_MAGNITUDE: Double = 3.0

@@ -1,5 +1,6 @@
 package me.terevo.app
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.todayIn
 import me.terevo.domain.DomainError
@@ -33,6 +34,8 @@ import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 import me.terevo.ui.person.toRussianMessage as warningToRussianMessage
 
+private val logger = KotlinLogging.logger {}
+
 class AppController(
     private val projects: ProjectService,
     private val settings: SettingsStore = JsonSettingsStore(ProjectDirectories().root),
@@ -48,6 +51,12 @@ class AppController(
     fun create(location: ProjectLocation): AppState = activate(projects.create(location))
 
     fun open(location: ProjectLocation): AppState = activate(projects.open(location))
+
+    fun createFromGedcom(location: ProjectLocation, path: String): AppState {
+        val result = projects.create(location)
+        state = activate(result)
+        return if (result is Outcome.Ok) previewGedcom(path) else state
+    }
 
     fun startAddingPerson(): AppState {
         val tree = commandBus?.tree?.value ?: return state
@@ -148,17 +157,26 @@ class AppController(
 
     fun previewGedcom(path: String): AppState {
         state = when (val preview = GedcomFiles.preview(path)) {
-            is Outcome.Ok -> state.copy(
-                gedcomPreview = GedcomImportState(
-                    people = preview.value.people,
-                    families = preview.value.families,
-                    skippedTags = preview.value.skippedTags,
-                    command = preview.value.command,
-                ),
-                status = "GEDCOM готов к импорту",
-            )
+            is Outcome.Ok -> {
+                logger.info {
+                    "GEDCOM preview ready: file=${Path.of(path).fileName}, people=${preview.value.people}, " +
+                            "families=${preview.value.families}, skippedTags=${preview.value.skippedTags.sorted()}"
+                }
+                state.copy(
+                    gedcomPreview = GedcomImportState(
+                        people = preview.value.people,
+                        families = preview.value.families,
+                        skippedTags = preview.value.skippedTags,
+                        command = preview.value.command,
+                    ),
+                    status = "GEDCOM готов к импорту",
+                )
+            }
 
-            is Outcome.Err -> state.copy(status = "Не удалось прочитать GEDCOM")
+            is Outcome.Err -> {
+                logger.error { "GEDCOM preview failed: file=${Path.of(path).fileName}, error=${preview.error}" }
+                state.copy(status = "Не удалось прочитать GEDCOM")
+            }
         }
         return state
     }
@@ -166,13 +184,25 @@ class AppController(
     fun confirmGedcomImport(): AppState {
         val preview = state.gedcomPreview ?: return state
         val bus = commandBus ?: return state
-        state = when (bus.execute(preview.command)) {
-            is Outcome.Ok -> remapTree(bus.tree.value, null).copy(
-                gedcomPreview = null,
-                status = "GEDCOM импортирован: ${preview.people} человек",
-            )
+        logger.info { "GEDCOM import requested: people=${preview.people}, families=${preview.families}" }
+        state = when (val result = bus.execute(preview.command)) {
+            is Outcome.Ok -> {
+                logger.info { "GEDCOM import completed: people=${preview.people}, families=${preview.families}" }
+                remapTree(bus.tree.value, null).copy(
+                    gedcomPreview = null,
+                    status = "GEDCOM импортирован: ${preview.people} человек",
+                )
+            }
 
-            is Outcome.Err -> state.copy(status = "Не удалось импортировать GEDCOM")
+            is Outcome.Err -> {
+                logger.error {
+                    "GEDCOM import failed: people=${preview.people}, families=${preview.families}, error=${result.error}"
+                }
+                state.copy(
+                    gedcomPreview = preview.copy(error = result.error.toRelationMessage(bus.tree.value)),
+                    status = "Не удалось импортировать GEDCOM",
+                )
+            }
         }
         return state
     }
@@ -866,6 +896,7 @@ class AppController(
         val opened = when (result) {
             is Outcome.Ok -> result.value
             is Outcome.Err -> {
+                logger.error { "Project activation failed: error=${result.error}" }
                 state = state.copy(status = result.error.toRussianMessage())
                 return state
             }
@@ -873,6 +904,7 @@ class AppController(
         val tree = when (val loaded = opened.repository.load()) {
             is Outcome.Ok -> loaded.value
             is Outcome.Err -> {
+                logger.error { "Project load failed: error=${loaded.error}" }
                 opened.close()
                 state = state.copy(status = loaded.error.toRussianMessage())
                 return state
