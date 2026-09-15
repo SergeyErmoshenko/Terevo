@@ -35,24 +35,19 @@ internal object CoordinateAssignment {
     private const val MAX_ITERATIONS: Int = 500
     private const val CONVERGENCE_THRESHOLD: Double = 0.01
 
-    // A row that's force-separated by resolveOverlaps (two unrelated branches landing on the same
-    // generation, one wider than the other below it) only pushes the groups actually *on* that
-    // row - it has no way to also carry that shove down into a pushed group's own descendants, who
-    // never see it and settle to their own equilibrium as if the push never happened. Left as a
-    // single one-shot pass, that reads as a lineage bending one way, jogging sideways at the forced
-    // row, then continuing to bend back toward its own natural line - a visible zigzag confirmed
-    // against a real family tree (a thin single-child lineage forced rightward past a sibling
-    // branch's wide subtree, whose own child then settled back to the left of it). Repeating the
-    // full relax-then-declamp cycle lets a later pass's relax phase pull each pushed group's
-    // neighbors toward its now-separated position, carrying the correction outward each round -
-    // this is the classical Sugiyama priority-method refinement (repeated sweeps of averaging plus
-    // per-row conflict resolution), not the same failure mode as declamping *inside* every single
-    // averaging pass: here a full damped-to-convergence relax happens between declamps, so a
-    // shared marriage group several generations away only receives one bounded correction per
-    // round instead of having every single micro-step's clamp fed straight back into the pull that
-    // produced it. Bounded well below MAX_ITERATIONS since each round only needs to propagate one
-    // row's worth of correction outward, not reach a fresh fixed point from scratch.
-    private const val MAX_DECLAMP_ROUNDS: Int = 8
+    // Resolving overlaps one row at a time has no notion that "this branch" and "that
+    // unrelated branch" are the SAME two blocks at every generation they coexist: each row
+    // gets clamped to the spacing floor independently, so the offset between the two
+    // blocks can silently differ from row to row - which reads as a lineage zigzagging
+    // sideways generation over generation instead of running in a straight line (confirmed
+    // against a real family tree: two unrelated in-law lineages sat at exactly the minimum
+    // allowed gap at TWO separate generations, with a different actual offset at each,
+    // bending an otherwise-straight direct blood line sideways). compactClusters below
+    // fixes this by moving each blood-lineage cluster (see LayerOrdering's `cluster` map)
+    // as a single rigid block - a simplified form of the subtree-translation classic
+    // tree-layout algorithms (Reingold-Tilford, Walker) use - so a cluster's own internal
+    // shape, exactly as relaxToConvergence computed it, is never bent by a neighboring
+    // row's independent clamp.
 
     fun assign(
         order: Map<Int, List<Group>>,
@@ -108,14 +103,29 @@ internal object CoordinateAssignment {
             var maxMove = 0.0
             for (generation in generations) {
                 for (group in order.getValue(generation)) {
-                    val neighborXs = group.nodes.flatMap { node ->
+                    // Grouping by the *neighboring* group before averaging - rather than averaging
+                    // every individual parent/child NodeId directly - stops a multi-member family
+                    // unit on one side (e.g. two co-parents) from outvoting a single member on the
+                    // other side (e.g. their one child) just because it happens to have more people
+                    // recorded. Every ParentChild edge to that unit still counts (a couple who share
+                    // two children is a stronger pull than one who shares one), but the unit itself
+                    // only ever contributes ONE vote to this group's average, matching how the
+                    // layout actually reads: "the parent generation is over there" and "the child
+                    // generation is over there" are two pulls of equal weight, not one pull per
+                    // person. Confirmed against a real family tree: without this, a single-child
+                    // lineage was dragged 2:1 toward its own (separately, heavily sibling-crowded)
+                    // parent couple and away from its own child, producing a visible zigzag right at
+                    // that generation - exactly what a user reported as "the branch escapes to the
+                    // other side."
+                    val neighborsByGroup = group.nodes.flatMap { node ->
                         (nodeParentsOf[node].orEmpty() + nodeChildrenOf[node].orEmpty()).mapNotNull { other ->
                             val otherGroup = groupOf[other] ?: return@mapNotNull null
-                            centerOf(other, otherGroup, snapshot, widths, metrics, spouseSpacing)
+                            otherGroup to centerOf(other, otherGroup, snapshot, widths, metrics, spouseSpacing)
                         }
-                    }
-                    if (neighborXs.isNotEmpty()) {
-                        val next = snapshot.getValue(group) + damping * (neighborXs.average() - snapshot.getValue(group))
+                    }.groupBy({ it.first }, { it.second })
+                    if (neighborsByGroup.isNotEmpty()) {
+                        val pull = neighborsByGroup.values.map { it.average() }.average()
+                        val next = snapshot.getValue(group) + damping * (pull - snapshot.getValue(group))
                         maxMove = maxOf(maxMove, abs(next - snapshot.getValue(group)))
                         centers[group] = next
                     }
@@ -138,33 +148,79 @@ internal object CoordinateAssignment {
             relax(damping = 1.0)
         }
 
-        // Turns the settled (possibly still overlapping) positions into a legal, order-preserving,
-        // non-overlapping layout for every row at once - order is exactly what LayerOrdering
-        // decided, so this only ever spaces groups apart, never reorders them. Returns the largest
-        // single-group move this declamp made, so the caller can tell when further rounds would be
-        // pointless.
-        fun declampAll(): Double {
-            var maxMove = 0.0
-            for (generation in generations) {
-                val row = order.getValue(generation)
-                val resolved = resolveOverlaps(row, centers, widths, ::gapBetween)
-                for (group in row) {
-                    maxMove = maxOf(maxMove, abs(resolved.getValue(group) - centers.getValue(group)))
-                    centers[group] = resolved.getValue(group)
-                }
-            }
-            return maxMove
-        }
+        relaxToConvergence()
+        compactClusters(generations, order, centers, widths, cluster, ::gapBetween)
 
-        var round = 0
-        while (true) {
-            relaxToConvergence()
-            round++
-            val moved = declampAll()
-            if (round >= MAX_DECLAMP_ROUNDS || moved < CONVERGENCE_THRESHOLD) break
+        // One final safety pass over the offset-adjusted positions for same-cluster sibling
+        // overlap (e.g. a wide sub-branch's own row needing extra room from its own
+        // sibling) - a purely local correction now, since compactClusters already
+        // guarantees no cross-cluster overlap at any row.
+        for (generation in generations) {
+            val row = order.getValue(generation)
+            val resolved = resolveOverlaps(row, centers, widths, ::gapBetween)
+            for (group in row) centers[group] = resolved.getValue(group)
         }
 
         return centers
+    }
+
+    // Moves each blood-lineage cluster (LayerOrdering's `cluster` map: every group's
+    // topmost ancestor group) as a single rigid block, instead of resolving overlaps one
+    // row at a time. For every row, an adjacent pair of groups from two different clusters
+    // yields a difference constraint - "the right cluster's offset must be at least this
+    // much more than the left cluster's offset" - and the tightest constraint per cluster
+    // pair (across every generation they coexist in) wins. Solved as a longest-path
+    // relaxation over the (small - a few dozen at most) cluster graph: since clusters stay
+    // contiguous within every row (LayerOrdering's own invariant), this graph is a DAG in
+    // practice and settles in at most one pass per cluster.
+    private fun compactClusters(
+        generations: List<Int>,
+        order: Map<Int, List<Group>>,
+        centers: MutableMap<Group, Double>,
+        widths: Map<Group, Double>,
+        cluster: Map<Group, Group>,
+        gapBetween: (Group, Group) -> Double,
+    ) {
+        val relaxed = centers.toMap()
+        fun clusterOf(group: Group): Group = cluster[group] ?: group
+
+        // constraint(a -> b): offset(b) - offset(a) >= weight
+        val constraints = mutableMapOf<Pair<Group, Group>, Double>()
+        for (generation in generations) {
+            val row = order.getValue(generation)
+            for (i in 0 until row.size - 1) {
+                val left = row[i]
+                val right = row[i + 1]
+                val leftCluster = clusterOf(left)
+                val rightCluster = clusterOf(right)
+                if (leftCluster == rightCluster) continue
+                val requiredGap = widths.getValue(left) / 2.0 + gapBetween(left, right) + widths.getValue(right) / 2.0
+                val weight = requiredGap - (relaxed.getValue(right) - relaxed.getValue(left))
+                val key = leftCluster to rightCluster
+                constraints[key] = maxOf(constraints[key] ?: Double.NEGATIVE_INFINITY, weight)
+            }
+        }
+
+        val clusters = (order.values.flatten().map(::clusterOf)).distinct()
+        val offset = clusters.associateWith { 0.0 }.toMutableMap()
+        var pass = 0
+        while (pass < clusters.size) {
+            var changed = false
+            for ((pair, weight) in constraints) {
+                val (from, to) = pair
+                val candidate = offset.getValue(from) + weight
+                if (candidate > offset.getValue(to)) {
+                    offset[to] = candidate
+                    changed = true
+                }
+            }
+            pass++
+            if (!changed) break
+        }
+
+        for (group in centers.keys.toList()) {
+            centers[group] = relaxed.getValue(group) + offset.getValue(clusterOf(group))
+        }
     }
 
     // A dummy group has no real size and is never made of more than one node, so its center is
