@@ -255,7 +255,7 @@ fun DrawScope.drawDragPreview(
 private fun Point.toOffset(): Offset = Offset(x.toFloat(), y.toFloat())
 
 private const val DETAILS_SCALE: Double = 0.3
-private const val EDGE_WIDTH: Float = 1.5f
+private const val EDGE_WIDTH: Float = 2f
 private const val FOCUSED_WIDTH: Float = 3f
 private const val RELATED_WIDTH: Float = 2f
 private const val RELATED_ALPHA: Float = 0.7f

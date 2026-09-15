@@ -151,7 +151,7 @@ object PdfTreeRenderer {
         return Rect(left, top, (xs.maxOrNull() ?: 0.0) - left, (ys.maxOrNull() ?: 0.0) - top)
     }
 
-    private const val EDGE_WIDTH: Float = 1f
+    private const val EDGE_WIDTH: Float = 1.25f
     private const val BORDER_WIDTH: Float = 0.5f
     private const val GENDER_STRIPE_WIDTH: Float = 6f
     private const val TEXT_LEFT: Float = 10f

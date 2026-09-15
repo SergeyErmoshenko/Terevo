@@ -1,5 +1,90 @@
 package me.terevo.layout
 
+internal data class Group(
+    val nodes: List<NodeId>,
+    val order: String,
+    val generation: Int,
+    // A synthetic single-node placeholder standing in for one intermediate generation of a
+    // Parentage edge that spans more than one generation (see WalkerLayoutEngine.placeComponent).
+    // It never has a real size and never produces a visible node in the final Layout.
+    val isDummy: Boolean = false,
+)
+
+internal fun groupWidth(group: Group, metrics: NodeMetrics, spacing: Double): Double =
+    if (group.isDummy) 0.0 else group.nodes.sumOf { metrics.sizeOf(it).width } + spacing * (group.nodes.size - 1)
+
+internal fun nodeCenterX(
+    node: NodeId,
+    group: Group,
+    centers: Map<Group, Double>,
+    widths: Map<Group, Double>,
+    metrics: NodeMetrics,
+    spacing: Double,
+): Double {
+    var left = centers.getValue(group) - widths.getValue(group) / 2.0
+    for (id in group.nodes) {
+        val width = metrics.sizeOf(id).width
+        if (id == node) return left + width / 2.0
+        left += width + spacing
+    }
+    error("$node is not a member of $group")
+}
+
+// Resolves a row of desired centers into non-overlapping ones without changing `order`: a
+// left-to-right pass and a right-to-left pass each independently satisfy the spacing constraint
+// (as a monotone sequence), so their average does too - the same principle Brandes-Köpf alignment
+// relies on to avoid a whole extra cleanup pass.
+internal fun resolveOverlaps(
+    order: List<Group>,
+    desired: Map<Group, Double>,
+    widths: Map<Group, Double>,
+    spacing: (Group, Group) -> Double,
+): Map<Group, Double> {
+    if (order.isEmpty()) return emptyMap()
+    val left = mutableMapOf<Group, Double>()
+    var previous: Group? = null
+    for (group in order) {
+        val minAllowed = previous?.let {
+            left.getValue(it) + widths.getValue(it) / 2.0 + spacing(it, group) + widths.getValue(group) / 2.0
+        }
+        left[group] = if (minAllowed == null) desired.getValue(group) else maxOf(desired.getValue(group), minAllowed)
+        previous = group
+    }
+    val right = mutableMapOf<Group, Double>()
+    var next: Group? = null
+    for (group in order.asReversed()) {
+        val maxAllowed = next?.let {
+            right.getValue(it) - widths.getValue(it) / 2.0 - spacing(group, it) - widths.getValue(group) / 2.0
+        }
+        right[group] = if (maxAllowed == null) desired.getValue(group) else minOf(desired.getValue(group), maxAllowed)
+        next = group
+    }
+    return order.associateWith { (left.getValue(it) + right.getValue(it)) / 2.0 }
+}
+
+// Seeds the center with the single widest item, then greedily assigns each remaining item
+// (widest first) to whichever side currently carries less total width - keeping the widest
+// item centered while the accumulated width stays balanced left/right, regardless of how
+// uneven the branch widths are, instead of just alternating by rank.
+internal fun <T> balancedOrder(items: List<T>, width: (T) -> Double, order: (T) -> String): List<T> {
+    val sorted = items.sortedWith(compareByDescending<T>(width).thenBy(order))
+    if (sorted.isEmpty()) return sorted
+    val arranged = ArrayDeque<T>()
+    arranged.addLast(sorted.first())
+    var leftWidth = 0.0
+    var rightWidth = 0.0
+    for (item in sorted.drop(1)) {
+        if (leftWidth < rightWidth) {
+            arranged.addFirst(item)
+            leftWidth += width(item)
+        } else {
+            arranged.addLast(item)
+            rightWidth += width(item)
+        }
+    }
+    return arranged.toList()
+}
+
 class WalkerLayoutEngine : LayoutEngine {
 
     override fun layout(request: LayoutRequest): Layout {
@@ -12,133 +97,125 @@ class WalkerLayoutEngine : LayoutEngine {
         val placedComponents = assignment.components.mapNotNull { component ->
             val componentNodes = component.filter { it in visible }
             if (componentNodes.isEmpty()) return@mapNotNull null
-            val placed = placeComponent(request, assignment.generations, componentNodes)
-            PlacedComponent(placed, componentNodes.minOf(request.graph::orderOf))
+            placeComponent(request, assignment.generations, componentNodes)
         }
         val orderedComponents = balancedOrder(placedComponents, { Rect.enclosing(it.nodes.values).width }, { it.order })
 
         val nodes = mutableMapOf<NodeId, Rect>()
+        val waypoints = mutableMapOf<Pair<NodeId, NodeId>, List<Point>>()
         var componentLeft = 0.0
         for (placement in orderedComponents) {
             val componentBounds = Rect.enclosing(placement.nodes.values)
             val dx = componentLeft - componentBounds.left
             placement.nodes.forEach { (id, rect) -> nodes[id] = rect.translated(dx, 0.0) }
+            placement.waypoints.forEach { (edge, points) -> waypoints[edge] = points.map { Point(it.x + dx, it.y) } }
             componentLeft += componentBounds.width + request.options.subtreeSpacing
         }
 
         return Layout(
             nodes = nodes,
-            edges = EdgeRouter.route(request.graph, nodes),
+            edges = EdgeRouter.route(request.graph, nodes, waypoints),
             generations = assignment.generations.filterKeys { it in visible },
             bounds = Rect.enclosing(nodes.values),
         )
     }
 
+    // Layered-graph (Sugiyama-style) placement: generations are already assigned, so within each
+    // generation the left-to-right order is decided from *every* parent/child group-adjacency at
+    // once (LayerOrdering), then every group's x-coordinate is pulled toward the average position
+    // of *all* its real neighbors, not just a single arbitrarily-chosen "primary" parent
+    // (CoordinateAssignment). This is what keeps second marriages, cousins and in-laws close to
+    // where they actually belong instead of drawing a long edge across the whole canvas.
     private fun placeComponent(
         request: LayoutRequest,
         generations: Map<NodeId, Int>,
         component: List<NodeId>,
-    ): Map<NodeId, Rect> {
+    ): PlacedComponent {
         val graph = request.graph
         val options = request.options
-        val componentSet = component.toSet()
-        val groups = spouseGroups(graph, generations, component)
-        val groupByNode = groups.flatMap { group -> group.nodes.map { it to group } }.toMap()
-        val rawChildren = groups.associateWith { group ->
-            group.nodes
-                .flatMap(graph::children)
-                .filter { it in componentSet }
-                .mapNotNull(groupByNode::get)
-                .distinct()
-        }
-        // A group can be listed as a "child" by more than one parent group (co-parents that
-        // spouseGroups() couldn't merge into one compound group, or separate biological/adoptive
-        // parents). Only one parent may own it for placement, otherwise its bounds/center get
-        // overwritten by whichever parent's traversal runs last, corrupting both subtrees.
-        val primaryParent = mutableMapOf<Group, Group>()
-        for (parent in groups) {
-            for (child in rawChildren.getValue(parent)) {
-                val current = primaryParent[child]
-                if (current == null || parent.order < current.order) primaryParent[child] = parent
+        val realGroups = spouseGroups(graph, generations, component)
+        val groupByNode = realGroups.flatMap { group -> group.nodes.map { it to group } }.toMap().toMutableMap()
+
+        // A Parentage edge spanning more than one generation (see GenerationAssigner's
+        // partner-alignment relaxation) gets a chain of synthetic single-node groups, one per
+        // intermediate generation, so ordering and coordinate assignment see it as a real chain of
+        // adjacent-generation hops - occupying space and positioned like any other node - instead
+        // of an edge invisible to both until it's drawn straight across whatever sits in between.
+        val dummyChains = mutableMapOf<Pair<NodeId, NodeId>, List<Group>>()
+        for (edge in graph.parentages) {
+            if (edge.parent !in groupByNode || edge.child !in groupByNode) continue
+            val parentGeneration = generations.getValue(edge.parent)
+            val childGeneration = generations.getValue(edge.child)
+            if (childGeneration - parentGeneration <= 1) continue
+            val chain = (parentGeneration + 1 until childGeneration).map { generation ->
+                val dummyId = NodeId("~dummy~${edge.parent}~${edge.child}~$generation~")
+                Group(
+                    nodes = listOf(dummyId),
+                    order = "${graph.orderOf(edge.parent)} ${graph.orderOf(edge.child)}",
+                    generation = generation,
+                    isDummy = true
+                )
+                    .also { groupByNode[dummyId] = it }
             }
+            dummyChains[edge.parent to edge.child] = chain
         }
-        val children = groups.associateWith { group ->
-            rawChildren.getValue(group).filter { primaryParent[it] == group }.sortedBy { it.order }
-        }
-        val parentGroups = primaryParent.keys
-        val roots = groups.filter { it !in parentGroups }.sortedBy { it.order }
-        // A root that had children in the raw graph but lost every one of them to another
-        // group's primary claim (e.g. a couple whose two members each bring their own parents)
-        // isn't a genuine independent subtree — it has nothing of its own to anchor on and would
-        // otherwise get dumped far away by the plain root sequencing below. It belongs directly
-        // above wherever its real child ended up instead.
-        val (trueRoots, orphanedRoots) = roots.partition {
-            children.getValue(it).isNotEmpty() || rawChildren.getValue(it).isEmpty()
-        }
-        val centers = mutableMapOf<Group, Double>()
+
+        val groups = realGroups + dummyChains.values.flatten()
         val widths = groups.associateWith { groupWidth(it, request.metrics, options.spouseSpacing) }
-        // A parent group can be linked to only a subset of a compound child group's members (e.g.
-        // a couple where each spouse keeps their own separate parent) — record which specific
-        // nodes each parent-child edge actually touches, so placement can anchor on them instead
-        // of the child group's overall midpoint.
-        val linkedChildNodes = children.entries.flatMap { (parent, kids) ->
-            kids.map { child ->
-                (parent to child) to parent.nodes.flatMap(graph::children).filter { it in child.nodes }
-            }
-        }.toMap()
 
-        val rootBounds = trueRoots.associateWith {
-            placeSubtree(it, children, widths, options, centers, linkedChildNodes, request.metrics)
+        val parentGroupsOf = groups.associateWith { mutableListOf<Group>() }
+        val childGroupsOf = groups.associateWith { mutableListOf<Group>() }
+        val nodeParentsOf = mutableMapOf<NodeId, MutableList<NodeId>>()
+        val nodeChildrenOf = mutableMapOf<NodeId, MutableList<NodeId>>()
+        fun link(parent: NodeId, child: NodeId) {
+            nodeChildrenOf.getOrPut(parent) { mutableListOf() }.add(child)
+            nodeParentsOf.getOrPut(child) { mutableListOf() }.add(parent)
+            val parentGroup = groupByNode.getValue(parent)
+            val childGroup = groupByNode.getValue(child)
+            parentGroupsOf.getValue(childGroup).let { if (parentGroup !in it) it.add(parentGroup) }
+            childGroupsOf.getValue(parentGroup).let { if (childGroup !in it) it.add(childGroup) }
         }
-        val orderedRoots = balancedOrder(trueRoots, { rootBounds.getValue(it).width }, { it.order })
-        var nextRootLeft = 0.0
-        for (root in orderedRoots) {
-            val subtree = rootBounds.getValue(root)
-            shiftSubtree(root, children, centers, nextRootLeft - subtree.left)
-            nextRootLeft += subtree.width + options.subtreeSpacing
-        }
-        // Anchor each orphaned root on the actual person(s) it descends to, not the whole target
-        // group's center — e.g. a couple's two members each keep their own parent, so that parent
-        // belongs directly above its own spouse's slot within the couple, not the couple's midpoint
-        // (which the couple's primary parent, if any, already occupies).
-        val orphanedAnchors = orphanedRoots.associateWith { root ->
-            root.nodes.flatMap(graph::children).filter { it in componentSet }
-                .map { childNode ->
-                    nodeCenterX(
-                        childNode,
-                        groupByNode.getValue(childNode),
-                        centers,
-                        widths,
-                        request.metrics,
-                        options.spouseSpacing
-                    )
+        for (edge in graph.parentages) {
+            if (edge.parent !in groupByNode || edge.child !in groupByNode) continue
+            val chain = dummyChains[edge.parent to edge.child]
+            if (chain == null) {
+                link(edge.parent, edge.child)
+            } else {
+                var previous = edge.parent
+                for (dummy in chain) {
+                    val dummyId = dummy.nodes.single()
+                    link(previous, dummyId)
+                    previous = dummyId
                 }
-                .average()
-        }
-        // Orphaned roots that still land on the exact same anchor (e.g. two claims on the same
-        // person) must not collapse onto one coordinate — lay them out side by side around it.
-        for ((anchorX, group) in orphanedRoots.groupBy(orphanedAnchors::getValue)) {
-            val ordered = balancedOrder(group, { widths.getValue(it) }, { it.order })
-            var left = 0.0
-            val offsets = mutableMapOf<Group, Double>()
-            for (item in ordered) {
-                offsets[item] = left + widths.getValue(item) / 2.0
-                left += widths.getValue(item) + options.siblingSpacing
+                link(previous, edge.child)
             }
-            val rowWidth = left - options.siblingSpacing
-            val rowLeft = anchorX - rowWidth / 2.0
-            for (item in ordered) {
-                centers[item] = rowLeft + offsets.getValue(item)
-            }
-        }
-        for (group in groups.filterNot { it in centers }.sortedBy { it.order }) {
-            centers[group] = nextRootLeft + widths.getValue(group) / 2.0
-            nextRootLeft += widths.getValue(group) + options.subtreeSpacing
         }
 
-        val generationHeights = component
-            .groupBy { generations.getValue(it) }
-            .mapValues { (_, ids) -> ids.maxOf { request.metrics.sizeOf(it).height } }
+        val (order, cluster) = LayerOrdering.order(
+            groups, parentGroupsOf, childGroupsOf, widths, options.siblingSpacing,
+            nodeParentsOf, nodeChildrenOf, groupByNode,
+        )
+        val centers = CoordinateAssignment.assign(
+            order = order,
+            widths = widths,
+            groupOf = groupByNode,
+            nodeParentsOf = nodeParentsOf,
+            nodeChildrenOf = nodeChildrenOf,
+            metrics = request.metrics,
+            siblingSpacing = options.siblingSpacing,
+            spouseSpacing = options.spouseSpacing,
+            cluster = cluster,
+            clusterSpacing = options.clusterSpacing,
+        )
+
+        // Every generation that holds any group - real or dummy - needs a row top, even one with
+        // no real component member of its own (a purely-transit row for a long edge's chain), so
+        // it falls back to the default node height instead of failing to look up a row it's not
+        // aware of.
+        val generationHeights = groups.map { it.generation }.distinct().associateWith { generation ->
+            component.filter { generations.getValue(it) == generation }
+                .maxOfOrNull { request.metrics.sizeOf(it).height } ?: request.metrics.defaultSize.height
+        }
         val generationTops = mutableMapOf<Int, Double>()
         var top = 0.0
         for (generation in generationHeights.keys.sorted()) {
@@ -146,8 +223,8 @@ class WalkerLayoutEngine : LayoutEngine {
             top += generationHeights.getValue(generation) + options.generationSpacing
         }
 
-        return buildMap {
-            for (group in groups) {
+        val nodes = buildMap {
+            for (group in realGroups) {
                 val groupWidth = widths.getValue(group)
                 var left = centers.getValue(group) - groupWidth / 2.0
                 for (id in group.nodes) {
@@ -157,82 +234,17 @@ class WalkerLayoutEngine : LayoutEngine {
                 }
             }
         }
-    }
 
-    private fun placeSubtree(
-        group: Group,
-        children: Map<Group, List<Group>>,
-        widths: Map<Group, Double>,
-        options: LayoutOptions,
-        centers: MutableMap<Group, Double>,
-        linkedChildNodes: Map<Pair<Group, Group>, List<NodeId>>,
-        metrics: NodeMetrics,
-    ): Rect {
-        val traversal = mutableListOf<Group>()
-        val stack = ArrayDeque<Pair<Group, Boolean>>()
-        stack.addLast(group to false)
-        while (stack.isNotEmpty()) {
-            val (current, visited) = stack.removeLast()
-            if (visited) {
-                traversal += current
-            } else {
-                stack.addLast(current to true)
-                children.getValue(current).asReversed().forEach { stack.addLast(it to false) }
+        val waypoints = dummyChains.mapValues { (_, chain) ->
+            chain.map { dummy ->
+                Point(
+                    centers.getValue(dummy),
+                    generationTops.getValue(dummy.generation) + generationHeights.getValue(dummy.generation) / 2.0,
+                )
             }
         }
 
-        val bounds = mutableMapOf<Group, Rect>()
-        for (current in traversal) {
-            val childGroups = children.getValue(current)
-            if (childGroups.isEmpty()) {
-                centers[current] = widths.getValue(current) / 2.0
-                bounds[current] = Rect(0.0, 0.0, widths.getValue(current), 0.0)
-                continue
-            }
-
-            val orderedChildren = balancedOrder(childGroups, { bounds.getValue(it).width }, { it.order })
-            var nextChildLeft = 0.0
-            for (child in orderedChildren) {
-                val childBounds = bounds.getValue(child)
-                shiftSubtree(child, children, centers, nextChildLeft - childBounds.left)
-                bounds[child] = childBounds.translated(nextChildLeft - childBounds.left, 0.0)
-                nextChildLeft += childBounds.width + options.siblingSpacing
-            }
-            val childLeft = bounds.getValue(orderedChildren.first()).left
-            val childRight = bounds.getValue(orderedChildren.last()).right
-            val onlyChild = orderedChildren.singleOrNull()
-            val partialLink = onlyChild?.let { linkedChildNodes[current to it] }
-                ?.takeIf { it.isNotEmpty() && it.size < onlyChild.nodes.size }
-            val center = if (onlyChild != null && partialLink != null) {
-                partialLink.map { nodeCenterX(it, onlyChild, centers, widths, metrics, options.spouseSpacing) }
-                    .average()
-            } else {
-                (childLeft + childRight) / 2.0
-            }
-            centers[current] = center
-            val ownLeft = center - widths.getValue(current) / 2.0
-            val left = minOf(ownLeft, childLeft)
-            val right = maxOf(ownLeft + widths.getValue(current), childRight)
-            bounds[current] = Rect(left, 0.0, right - left, 0.0)
-        }
-        return bounds.getValue(group)
-    }
-
-    private fun shiftSubtree(
-        root: Group,
-        children: Map<Group, List<Group>>,
-        centers: MutableMap<Group, Double>,
-        dx: Double,
-    ) {
-        if (dx == 0.0) return
-        val stack = ArrayDeque(listOf(root))
-        val visited = mutableSetOf<Group>()
-        while (stack.isNotEmpty()) {
-            val current = stack.removeLast()
-            if (!visited.add(current)) continue
-            centers[current] = centers.getValue(current) + dx
-            stack.addAll(children.getValue(current))
-        }
+        return PlacedComponent(nodes, waypoints, component.minOf(graph::orderOf))
     }
 
     private fun spouseGroups(
@@ -257,33 +269,13 @@ class WalkerLayoutEngine : LayoutEngine {
                 }
             }
             nodes.sortBy(graph::orderOf)
-            groups += Group(nodes, nodes.joinToString("\u0000") { graph.orderOf(it) })
+            groups += Group(nodes, nodes.joinToString(" ") { graph.orderOf(it) }, generation)
         }
         return groups.sortedBy { it.order }
     }
 
     private fun coParentsOf(graph: TreeGraph, node: NodeId): List<NodeId> =
         graph.children(node).flatMap(graph::parents).filter { it != node }
-
-    private fun groupWidth(group: Group, metrics: NodeMetrics, spacing: Double): Double =
-        group.nodes.sumOf { metrics.sizeOf(it).width } + spacing * (group.nodes.size - 1)
-
-    private fun nodeCenterX(
-        node: NodeId,
-        group: Group,
-        centers: Map<Group, Double>,
-        widths: Map<Group, Double>,
-        metrics: NodeMetrics,
-        spacing: Double,
-    ): Double {
-        var left = centers.getValue(group) - widths.getValue(group) / 2.0
-        for (id in group.nodes) {
-            val width = metrics.sizeOf(id).width
-            if (id == node) return left + width / 2.0
-            left += width + spacing
-        }
-        error("$node is not a member of $group")
-    }
 
     private fun visibleNodes(request: LayoutRequest, generations: Map<NodeId, Int>): Set<NodeId> {
         if (request.options.mode == LayoutMode.WHOLE_FAMILY) return request.graph.sortedNodeIds().toSet()
@@ -313,24 +305,9 @@ class WalkerLayoutEngine : LayoutEngine {
         return visible.filterTo(mutableSetOf()) { it in generations }
     }
 
-    private data class Group(
-        val nodes: List<NodeId>,
-        val order: String,
-    )
-
     private data class PlacedComponent(
         val nodes: Map<NodeId, Rect>,
+        val waypoints: Map<Pair<NodeId, NodeId>, List<Point>>,
         val order: String,
     )
-
-    // Puts the widest item in the middle and alternates the next-widest to either side, so a
-    // handful of large branches don't push a narrow one out to an extreme, off-center edge.
-    private fun <T> balancedOrder(items: List<T>, width: (T) -> Double, order: (T) -> String): List<T> {
-        val sorted = items.sortedWith(compareByDescending<T>(width).thenBy(order))
-        val arranged = ArrayDeque<T>()
-        for ((index, item) in sorted.withIndex()) {
-            if (index == 0 || index % 2 == 1) arranged.addLast(item) else arranged.addFirst(item)
-        }
-        return arranged.toList()
-    }
 }

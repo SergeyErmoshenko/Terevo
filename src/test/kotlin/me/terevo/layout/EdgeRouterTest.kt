@@ -17,7 +17,7 @@ class EdgeRouterTest {
         assertEquals(
             EdgePath(
                 edge = edge,
-                segments = listOf(Point(80.0, 64.0), Point(80.0, 112.0), Point(80.0, 112.0), Point(80.0, 160.0)),
+                segments = listOf(Point(80.0, 64.0), Point(80.0, 88.0), Point(80.0, 88.0), Point(80.0, 160.0)),
                 style = EdgeStyle.BIOLOGICAL,
             ),
             layout.edges.single(),
@@ -38,13 +38,27 @@ class EdgeRouterTest {
         val fatherPath = layout.edges.first { it.edge == father }
         val motherPath = layout.edges.first { it.edge == mother }
 
+        val fatherRect = layout.nodes.getValue(NodeId("father"))
+        val motherRect = layout.nodes.getValue(NodeId("mother"))
+
         assertTrue(layout.edges.none { it.edge == marriage })
-        assertEquals(fatherPath.segments, motherPath.segments)
+        // Each parent gets its own stem down to a shared bus - same convergence point and same
+        // final drop into the child, but the two paths aren't the literal same object since each
+        // starts from its own parent's own center.
+        assertEquals(fatherPath.segments.last(), motherPath.segments.last())
         assertEquals(childRect.topCenter, fatherPath.segments.last())
+        val busY = fatherPath.segments[1].y
+        assertEquals(busY, motherPath.segments[1].y)
+        // The bar sits in the gap below both parents, not flush with either card's own bottom.
+        assertTrue(busY > maxOf(fatherRect.bottom, motherRect.bottom))
+        // The bracket must visibly tie into each parent's own center, not start from a point
+        // floating in the gap between them.
+        assertTrue(fatherPath.segments.any { it.x == fatherRect.centerX && it.y == fatherRect.bottom })
+        assertTrue(motherPath.segments.any { it.x == motherRect.centerX && it.y == motherRect.bottom })
     }
 
     @Test
-    fun `married parents with two shared children get one spine branching into each child`() {
+    fun `married parents with two shared children get one spine per parent branching into each child`() {
         val marriage = union("father", "mother")
         val toChildA = parentage("father", "childA")
         val toChildB = parentage("mother", "childB")
@@ -54,10 +68,15 @@ class EdgeRouterTest {
         )
 
         val paths = layout.edges.filter { it.edge is LayoutEdge.Parentage }
-        val spineStart = paths.first().segments.first()
+        // Each parent's own stem is shared across every child they branch into, but the two
+        // parents don't share a single combined spine with each other anymore - that's what put
+        // the bar flush against whichever card happened to be shorter.
+        val fatherPaths = paths.filter { (it.edge as LayoutEdge.Parentage).parent == NodeId("father") }
+        val motherPaths = paths.filter { (it.edge as LayoutEdge.Parentage).parent == NodeId("mother") }
 
         assertTrue(layout.edges.none { it.edge == marriage })
-        assertTrue(paths.all { it.segments.first() == spineStart })
+        assertTrue(fatherPaths.all { it.segments.first() == fatherPaths.first().segments.first() })
+        assertTrue(motherPaths.all { it.segments.first() == motherPaths.first().segments.first() })
         assertEquals(4, paths.size)
     }
 
@@ -88,7 +107,7 @@ class EdgeRouterTest {
     }
 
     @Test
-    fun `unmarried co-parents still land on different points of the child`() {
+    fun `unmarried co-parents converge on the same bracket point as a married couple`() {
         val father = parentage("father", "child")
         val mother = parentage("mother", "child")
         val layout = layoutOf(listOf("father", "mother", "child"), listOf(father, mother))
@@ -96,8 +115,23 @@ class EdgeRouterTest {
         val fatherPath = layout.edges.first { it.edge == father }
         val motherPath = layout.edges.first { it.edge == mother }
 
-        assertTrue(fatherPath.segments.last().x != motherPath.segments.last().x)
-        assertTrue(fatherPath.segments[1].y == motherPath.segments[1].y)
+        assertTrue(fatherPath.segments[0].x != motherPath.segments[0].x)
+        assertEquals(fatherPath.segments[2], motherPath.segments[2])
+        assertEquals(fatherPath.segments.last(), motherPath.segments.last())
+    }
+
+    @Test
+    fun `three unmarried co-parents of one child all converge on the child's center`() {
+        val first = parentage("first", "child")
+        val second = parentage("second", "child")
+        val third = parentage("third", "child")
+        val layout = layoutOf(listOf("first", "second", "third", "child"), listOf(first, second, third))
+
+        val paths = listOf(first, second, third).map { edge -> layout.edges.first { it.edge == edge } }
+
+        assertEquals(1, paths.map { it.segments[2] }.distinct().size)
+        assertEquals(1, paths.map { it.segments.last() }.distinct().size)
+        assertEquals(3, paths.map { it.segments[0].x }.distinct().size)
     }
 
     @Test
@@ -118,6 +152,28 @@ class EdgeRouterTest {
 
         assertEquals(0, properCrossings(layout.edges))
         assertTrue(layout.edges.all { path -> path.segments.zipWithNext().all { (a, b) -> a.x == b.x || a.y == b.y } })
+    }
+
+    @Test
+    fun `two cousin branches joined by a marriage have no proper edge crossings`() {
+        val layout = layoutOf(
+            listOf(
+                "ancestorA", "ancestorB",
+                "parentA1", "parentA2", "parentB1", "parentB2",
+                "cousinA", "cousinB",
+            ),
+            listOf(
+                parentage("ancestorA", "parentA1"),
+                parentage("ancestorA", "parentA2"),
+                parentage("ancestorB", "parentB1"),
+                parentage("ancestorB", "parentB2"),
+                parentage("parentA1", "cousinA"),
+                parentage("parentB1", "cousinB"),
+                union("cousinA", "cousinB"),
+            ),
+        )
+
+        assertEquals(0, properCrossings(layout.edges))
     }
 
     private fun layoutOf(nodes: List<String>, edges: List<LayoutEdge>): Layout =

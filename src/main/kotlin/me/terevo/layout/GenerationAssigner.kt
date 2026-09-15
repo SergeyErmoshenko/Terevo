@@ -73,14 +73,28 @@ internal object GenerationAssigner {
     }
 
     // Raises a node's generation to at least minGeneration and, only where that actually forces
-    // a change, cascades the same requirement to its children one generation deeper — so a shared
+    // a change, cascades the same requirement to its children one generation deeper - so a shared
     // child that's already deep enough via another parent is left untouched instead of being
     // pushed further down than it needs to be.
+    //
+    // The raise also propagates backward to a parent that was tightly (no slack) one generation
+    // above the node's *old* generation: without this, pulling one spouse down to match a partner
+    // whose own lineage simply has more recorded generations leaves that spouse's own parent
+    // stranded behind by two or more generations - turning a plain one-hop parent/child edge into
+    // a multi-generation edge that gets rendered as a dummy-waypoint zigzag instead of a straight
+    // connector. Raising the parent is always safe: it only ever increases generation numbers, and
+    // the forward cascade above already keeps that parent's other children consistent afterward.
     private fun relax(graph: TreeGraph, generations: MutableMap<NodeId, Int>, node: NodeId, minGeneration: Int) {
-        if (generations.getValue(node) >= minGeneration) return
+        val previous = generations.getValue(node)
+        if (previous >= minGeneration) return
         generations[node] = minGeneration
         for (child in graph.children(node)) {
             relax(graph, generations, child, minGeneration + 1)
+        }
+        for (parent in graph.parents(node)) {
+            if (generations.getValue(parent) == previous - 1) {
+                relax(graph, generations, parent, minGeneration - 1)
+            }
         }
     }
 

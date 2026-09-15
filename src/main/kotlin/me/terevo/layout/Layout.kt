@@ -34,6 +34,11 @@ data class LayoutOptions(
     val subtreeSpacing: Double = DEFAULT_SUBTREE_SPACING,
     val generationSpacing: Double = DEFAULT_GENERATION_SPACING,
     val spouseSpacing: Double = DEFAULT_SPOUSE_SPACING,
+    // Extra gap added on top of siblingSpacing between two adjacent groups in the same row that
+    // belong to different family clusters (see LayerOrdering's cluster/root map), so unrelated
+    // branches that merely land on the same generation read as clearly separate blocks instead of
+    // packed as tight as ordinary siblings under the same parent.
+    val clusterSpacing: Double = DEFAULT_CLUSTER_SPACING,
     val direction: LayoutDirection = LayoutDirection.TOP_DOWN,
 ) {
     companion object {
@@ -42,6 +47,7 @@ data class LayoutOptions(
         const val DEFAULT_SUBTREE_SPACING: Double = 48.0
         const val DEFAULT_GENERATION_SPACING: Double = 96.0
         const val DEFAULT_SPOUSE_SPACING: Double = 32.0
+        const val DEFAULT_CLUSTER_SPACING: Double = 200.0
     }
 }
 

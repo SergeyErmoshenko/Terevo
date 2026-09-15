@@ -51,7 +51,7 @@ class WalkerLayoutEngineTest {
                     parentage("second", "childB"),
                 ),
             ),
-            "childA=100,160|childB=284,160|first=0,0|person=192,0|second=384,0",
+            "childA=96,160|childB=288,160|first=0,0|person=192,0|second=384,0",
         )
     }
 
@@ -157,13 +157,214 @@ class WalkerLayoutEngineTest {
 
         val layout = engine.layout(LayoutRequest(graph, metrics))
 
-        val coupleLeft = layout.rectOf(nodeId("father"))!!.left
-        val coupleRight = layout.rectOf(nodeId("mother"))!!.right
+        val fatherCenter = layout.rectOf(nodeId("father"))!!.centerX
+        val motherCenter = layout.rectOf(nodeId("mother"))!!.centerX
         val fatherGrandfatherCenter = layout.rectOf(nodeId("fatherGrandfather"))!!.centerX
         val motherGrandfatherCenter = layout.rectOf(nodeId("motherGrandfather"))!!.centerX
 
-        assertTrue(fatherGrandfatherCenter in coupleLeft..coupleRight)
-        assertTrue(motherGrandfatherCenter in coupleLeft..coupleRight)
+        // The two grandfathers are unrelated lineages that merely land on the same generation, so
+        // clusterSpacing is free to push them wider than the couple's own narrow footprint below -
+        // that's the intended fix for "unrelated branches read as too close together". What must
+        // still hold is that each grandfather stays on his own side and closer to his own child than
+        // to the in-law child, instead of drifting past the midpoint.
+        assertTrue(fatherGrandfatherCenter < motherGrandfatherCenter)
+        assertTrue(
+            kotlin.math.abs(fatherGrandfatherCenter - fatherCenter) < kotlin.math.abs(fatherGrandfatherCenter - motherCenter),
+        )
+        assertTrue(
+            kotlin.math.abs(motherGrandfatherCenter - motherCenter) < kotlin.math.abs(motherGrandfatherCenter - fatherCenter),
+        )
+        assertNoOverlaps(layout)
+        assertEquals(layout, engine.layout(LayoutRequest(graph, metrics)))
+    }
+
+    @Test
+    fun `a wide subtree tucks its shallow row close to a plain sibling instead of reserving its full width`() {
+        val graph = graphOf(
+            nodes = listOf("top", "a", "b", "w1", "w2", "w3"),
+            edges = listOf(
+                parentage("top", "a"),
+                parentage("top", "b"),
+                parentage("b", "w1"),
+                parentage("b", "w2"),
+                parentage("b", "w3"),
+            ),
+        )
+
+        val layout = engine.layout(LayoutRequest(graph, metrics))
+
+        val aRect = layout.rectOf(nodeId("a"))!!
+        val bRect = layout.rectOf(nodeId("b"))!!
+
+        assertEquals(24.0, aRect.left - bRect.right)
+        assertNoOverlaps(layout)
+        assertEquals(layout, engine.layout(LayoutRequest(graph, metrics)))
+    }
+
+    @Test
+    fun `a marriage between descendants of two separate branches pulls both ancestor lineages toward the couple`() {
+        val graph = graphOf(
+            nodes = listOf(
+                "ancestorA", "ancestorB",
+                "parentA1", "parentA2", "parentB1", "parentB2",
+                "cousinA", "cousinB",
+            ),
+            edges = listOf(
+                parentage("ancestorA", "parentA1"),
+                parentage("ancestorA", "parentA2"),
+                parentage("ancestorB", "parentB1"),
+                parentage("ancestorB", "parentB2"),
+                parentage("parentA1", "cousinA"),
+                parentage("parentB1", "cousinB"),
+                union("cousinA", "cousinB"),
+            ),
+        )
+
+        val layout = engine.layout(LayoutRequest(graph, metrics))
+
+        val cousinACenter = layout.rectOf(nodeId("cousinA"))!!.centerX
+        val cousinBCenter = layout.rectOf(nodeId("cousinB"))!!.centerX
+        val parentA1Center = layout.rectOf(nodeId("parentA1"))!!.centerX
+        val parentB1Center = layout.rectOf(nodeId("parentB1"))!!.centerX
+        val bracket = minOf(parentA1Center, parentB1Center)..maxOf(parentA1Center, parentB1Center)
+
+        // The married couple should end up sandwiched between the two ancestor lineages it
+        // connects, not off to one side with one branch stranded wherever its own unrelated
+        // subtree happened to place it.
+        assertTrue(cousinACenter in bracket)
+        assertTrue(cousinBCenter in bracket)
+        assertNoOverlaps(layout)
+        assertEquals(layout, engine.layout(LayoutRequest(graph, metrics)))
+    }
+
+    @Test
+    fun `a partner-alignment pull on one spouse also raises their own tightly-linked parent`() {
+        // "q" has one shallow child "c2", who later has a child "gc" with a much deeper partner
+        // "z". Aligning co-parents "c2" and "z" to the same generation pulls "c2" several
+        // generations deeper than "q". Reproduction of a real reported bug: GenerationAssigner.relax
+        // used to only cascade that pull to "c2"'s own descendants, never back up to "q", so "q"'s
+        // own direct-parent edge to "c2" ended up spanning every generation in between and rendered
+        // as a multi-bend dummy-waypoint zigzag instead of a straight one-hop connector. Since "q"
+        // was tightly (no slack) one generation above "c2"'s old position, it must be pulled down
+        // right along with "c2" so the edge between them stays a plain single hop.
+        val edge = parentage("q", "c2")
+        val graph = graphOf(
+            nodes = listOf("q", "c2", "z", "zAncestor1", "zAncestor2", "zAncestor3", "zAncestor4", "gc"),
+            edges = listOf(
+                edge,
+                parentage("zAncestor1", "zAncestor2"),
+                parentage("zAncestor2", "zAncestor3"),
+                parentage("zAncestor3", "zAncestor4"),
+                parentage("zAncestor4", "z"),
+                parentage("c2", "gc"),
+                parentage("z", "gc"),
+            ),
+        )
+
+        val layout = engine.layout(LayoutRequest(graph, metrics))
+        val path = layout.edges.single { it.edge == edge }
+
+        assertEquals(4, layout.generations.getValue(nodeId("c2")))
+        assertEquals(3, layout.generations.getValue(nodeId("q")))
+        // A plain single-generation edge always renders as the standard 4-point parent-bus-child
+        // bracket (see EdgeRouter.routeParentage) - more than 4 would mean it's still bending
+        // through leftover dummy waypoints from a multi-generation gap.
+        assertEquals(4, path.segments.size, "expected a plain single-hop bracket, got ${path.segments}")
+        assertNoOverlaps(layout)
+        assertEquals(layout, engine.layout(LayoutRequest(graph, metrics)))
+    }
+
+    @Test
+    fun `a remarried couple's grandchild stays clustered with its blood family, not an unrelated one`() {
+        // Anonymized reproduction of a real reported bug (node names are meaningless placeholders,
+        // but the edge topology is copied verbatim from the real family tree that triggered it - a
+        // hand-crafted minimal graph didn't create enough crossing-minimization pressure to
+        // reproduce the failure, this shape reliably does). "p26" has three children including
+        // "p25" and "p30". "p25" marries "p24"+"p27"'s child "p28", whose grandparents "p37"+"p38"
+        // are an unrelated in-law couple reached through a multi-generation edge (rendered via
+        // dummy waypoints). A third, unrelated lineage ("p22" -> "p21" -> "p16"/"p17"/"p19", where
+        // "p19" also married into an 8-child family) lands on the same generation as "p24"/"p27"
+        // and "p30"'s children "p32"/"p33"/"p34". Before the fix, that unrelated lineage's
+        // descendants got sorted in between "p24" and "p32"/"p33"/"p34", slicing "p26"'s blood
+        // family in half.
+        val graph = graphOf(
+            nodes = listOf(
+                "p00", "p01", "p02", "p03", "p04",
+                "p05", "p06", "p07",
+                "p08", "p09", "p10", "p11", "p12", "p13", "p14", "p15",
+                "p16", "p17", "p18", "p19", "p20",
+                "p21", "p22",
+                "p23", "p24", "p25", "p26",
+                "p27", "p28", "p29",
+                "p30", "p31", "p32", "p33", "p34", "p35", "p36",
+                "p37", "p38", "p39",
+            ),
+            edges = listOf(
+                parentage("p01", "p00"),
+                parentage("p02", "p00"),
+                union("p02", "p01"),
+                parentage("p04", "p01"),
+                parentage("p03", "p02"),
+                parentage("p05", "p03"),
+                parentage("p09", "p06"),
+                parentage("p07", "p06"),
+                parentage("p09", "p05"),
+                parentage("p07", "p05"),
+                union("p09", "p07"),
+                parentage("p18", "p08"), parentage("p19", "p08"),
+                parentage("p18", "p09"), parentage("p19", "p09"),
+                parentage("p18", "p10"), parentage("p19", "p10"),
+                parentage("p18", "p11"), parentage("p19", "p11"),
+                parentage("p18", "p12"), parentage("p19", "p12"),
+                parentage("p18", "p13"), parentage("p19", "p13"),
+                parentage("p18", "p14"), parentage("p19", "p14"),
+                parentage("p18", "p15"), parentage("p19", "p15"),
+                union("p19", "p18"),
+                union("p13", "p29"),
+                parentage("p21", "p19"),
+                parentage("p21", "p17"),
+                parentage("p21", "p16"),
+                union("p17", "p20"),
+                parentage("p22", "p21"),
+                parentage("p24", "p23"),
+                parentage("p27", "p23"),
+                union("p24", "p27"),
+                parentage("p25", "p24"),
+                parentage("p28", "p24"),
+                union("p25", "p28"),
+                parentage("p26", "p25"),
+                parentage("p23", "p04"),
+                parentage("p37", "p27"),
+                parentage("p38", "p27"),
+                union("p37", "p38"),
+                parentage("p39", "p28"),
+                parentage("p26", "p30"),
+                parentage("p26", "p35"),
+                parentage("p26", "p36"),
+                union("p31", "p30"),
+                parentage("p30", "p32"),
+                parentage("p30", "p33"),
+                parentage("p30", "p34"),
+                parentage("p31", "p32"),
+                parentage("p31", "p33"),
+                parentage("p31", "p34"),
+            ),
+        )
+
+        val layout = engine.layout(LayoutRequest(graph, metrics))
+
+        val cousinALeft = layout.rectOf(nodeId("p24"))!!.left
+        val cousinBLeft = layout.rectOf(nodeId("p32"))!!.left
+        val bloodFamilyBracket = minOf(cousinALeft, cousinBLeft)..maxOf(cousinALeft, cousinBLeft)
+
+        for (interloper in listOf("p16", "p17", "p18", "p19", "p20")) {
+            val left = layout.rectOf(nodeId(interloper))!!.left
+            assertFalse(
+                left in bloodFamilyBracket,
+                "unrelated $interloper ($left) landed between the blood-family cousins " +
+                    "p24 ($cousinALeft) and p32 ($cousinBLeft)",
+            )
+        }
         assertNoOverlaps(layout)
         assertEquals(layout, engine.layout(LayoutRequest(graph, metrics)))
     }
