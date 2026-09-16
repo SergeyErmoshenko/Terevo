@@ -370,6 +370,143 @@ class WalkerLayoutEngineTest {
     }
 
     @Test
+    fun `a spouse faces the side their own family is on so the parentage edge does not cross their partner`() {
+        // Anonymized reproduction of a real reported bug. "husband" and "wife" are merged into one
+        // couple box by spouseGroups, which orders the members by name - so whether a member ends up
+        // on the left or right of the box was unrelated to where their own relatives sit.
+        //
+        // Here "wife" is the one who married in: her parents and four siblings form a whole branch
+        // off to one side, while "husband"'s own lineage descends on the other. When the by-name
+        // order put "wife" on the side facing away from her family, her parentage edge had to reach
+        // back across "husband"'s box and over his descending line - which is exactly the tangle
+        // reported on a real tree ("the branches got mixed up at that generation").
+        val graph = graphOf(
+            nodes = listOf(
+                "husbandParent",
+                "husband", "wife", "husbandSibling",
+                "child",
+                "wifeFather", "wifeMother",
+                "wifeSibA", "wifeSibB", "wifeSibC", "wifeSibD",
+            ),
+            edges = listOf(
+                parentage("husbandParent", "husband"),
+                parentage("husbandParent", "husbandSibling"),
+                union("husband", "wife"),
+                parentage("husband", "child"),
+                parentage("wife", "child"),
+
+                union("wifeFather", "wifeMother"),
+                parentage("wifeFather", "wife"),
+                parentage("wifeMother", "wife"),
+                parentage("wifeFather", "wifeSibA"),
+                parentage("wifeMother", "wifeSibA"),
+                parentage("wifeFather", "wifeSibB"),
+                parentage("wifeMother", "wifeSibB"),
+                parentage("wifeFather", "wifeSibC"),
+                parentage("wifeMother", "wifeSibC"),
+                parentage("wifeFather", "wifeSibD"),
+                parentage("wifeMother", "wifeSibD"),
+            ),
+        )
+
+        val layout = engine.layout(LayoutRequest(graph, metrics))
+
+        val husbandCenter = layout.rectOf(nodeId("husband"))!!.centerX
+        val wifeCenter = layout.rectOf(nodeId("wife"))!!.centerX
+        val wifeParentsCenter = (
+            layout.rectOf(nodeId("wifeFather"))!!.centerX + layout.rectOf(nodeId("wifeMother"))!!.centerX
+            ) / 2.0
+
+        // Whichever side the wife's parents ended up on, she must be the member of the couple box
+        // on that same side - otherwise her parentage edge crosses back over her husband.
+        val parentsAreRight = wifeParentsCenter > husbandCenter
+        assertTrue(
+            if (parentsAreRight) wifeCenter > husbandCenter else wifeCenter < husbandCenter,
+            "wife ($wifeCenter) is on the wrong side of husband ($husbandCenter): her own parents " +
+                "are at $wifeParentsCenter, so her parentage edge has to cross his box",
+        )
+        assertNoOverlaps(layout)
+        assertEquals(layout, engine.layout(LayoutRequest(graph, metrics)))
+    }
+
+    @Test
+    fun `the parent couple carrying the lineage stays above their own child instead of sliding to the row edge`() {
+        // Anonymized reproduction of a real reported bug, edge topology copied from the family tree
+        // that triggered it. "ancestor"+"ancestorSpouse" have five children; "parent" is the one who
+        // carries the line onward. "parent" marries "parentSpouse" (merged into ONE group box by
+        // spouseGroups) and they have "heir" and "heirSibling"; "heir" continues to "descendant".
+        // "parent"'s four childless siblings share its row.
+        //
+        // Two independent defects put that couple near the left edge of their row while their own
+        // child sat mid-row, so the direct blood line visibly jogged sideways at that generation
+        // (reported as "the branch went left, then right, and everything got mixed up"):
+        //  - crossingsBetween counted inversions among edges leaving the SAME parent group. Those
+        //    edges share an endpoint and cannot cross, so the score tracked the order relations
+        //    happened to be recorded in, and `order` discarded correct rows for lower phantom
+        //    scores (a lone parent of five children scored 6 "crossings" one way and 5 the other).
+        //  - sweep's barycenter compared a real neighbor-row position against an own-row index
+        //    fallback - two different coordinate scales - so an only-child lineage sorted to the
+        //    row's edge purely because the two rows had different lengths.
+        val graph = graphOf(
+            nodes = listOf(
+                "ancestor", "ancestorSpouse",
+                "parent", "parentSpouse",
+                "parentSibA", "parentSibB", "parentSibC", "parentSibD",
+                "heir", "heirSibling",
+                "descendant",
+            ),
+            edges = listOf(
+                union("ancestor", "ancestorSpouse"),
+
+                parentage("ancestor", "parent"),
+                parentage("ancestorSpouse", "parent"),
+                parentage("ancestor", "parentSibA"),
+                parentage("ancestorSpouse", "parentSibA"),
+                parentage("ancestor", "parentSibB"),
+                parentage("ancestorSpouse", "parentSibB"),
+                parentage("ancestor", "parentSibC"),
+                parentage("ancestorSpouse", "parentSibC"),
+                parentage("ancestor", "parentSibD"),
+                parentage("ancestorSpouse", "parentSibD"),
+                union("parent", "parentSpouse"),
+
+                parentage("parent", "heir"),
+                parentage("parentSpouse", "heir"),
+                parentage("parent", "heirSibling"),
+                parentage("parentSpouse", "heirSibling"),
+
+                parentage("heir", "descendant"),
+            ),
+        )
+
+        val layout = engine.layout(LayoutRequest(graph, metrics))
+
+        val parentRect = layout.rectOf(nodeId("parent"))!!
+        val coupleCenter = (parentRect.centerX + layout.rectOf(nodeId("parentSpouse"))!!.centerX) / 2.0
+        val childrenCenter = (
+            layout.rectOf(nodeId("heir"))!!.centerX + layout.rectOf(nodeId("heirSibling"))!!.centerX
+            ) / 2.0
+
+        // The couple carrying the lineage must sit above their own children rather than be pushed
+        // aside by childless siblings. Half a node of slack absorbs ordinary relaxation give-and-take.
+        assertTrue(
+            kotlin.math.abs(coupleCenter - childrenCenter) <= NODE_WIDTH / 2.0,
+            "the lineage-carrying couple (center $coupleCenter) drifted from their own children " +
+                "(center $childrenCenter) - the blood line jogs sideways at this generation",
+        )
+        // And the childless siblings should end up spread on both sides, not all stacked on one.
+        val siblingsLeft = listOf("parentSibA", "parentSibB", "parentSibC", "parentSibD")
+            .count { layout.rectOf(nodeId(it))!!.centerX < parentRect.centerX }
+        assertTrue(
+            siblingsLeft in 1..3,
+            "expected the childless siblings spread on both sides of the lineage-carrying couple, " +
+                "but $siblingsLeft of 4 are to its left",
+        )
+        assertNoOverlaps(layout)
+        assertEquals(layout, engine.layout(LayoutRequest(graph, metrics)))
+    }
+
+    @Test
     fun `golden disconnected components are spaced horizontally`() {
         assertGolden(
             graphOf(listOf("a", "b", "c"), listOf(parentage("a", "b"))),

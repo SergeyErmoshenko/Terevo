@@ -62,18 +62,31 @@ internal fun resolveOverlaps(
     return order.associateWith { (left.getValue(it) + right.getValue(it)) / 2.0 }
 }
 
-// Seeds the center with the single widest item, then greedily assigns each remaining item
-// (widest first) to whichever side currently carries less total width - keeping the widest
+// Seeds the center with the most important item, then greedily assigns each remaining item
+// (widest first) to whichever side currently carries less total width - keeping the centered
 // item centered while the accumulated width stays balanced left/right, regardless of how
 // uneven the branch widths are, instead of just alternating by rank.
-internal fun <T> balancedOrder(items: List<T>, width: (T) -> Double, order: (T) -> String): List<T> {
-    val sorted = items.sortedWith(compareByDescending<T>(width).thenBy(order))
+//
+// `priority` picks what goes in the middle (higher wins, ties broken by width then `order`).
+// Callers that have no reason to prefer one item over another leave it at its default and get
+// the widest item centered, as before.
+internal fun <T> balancedOrder(
+    items: List<T>,
+    width: (T) -> Double,
+    priority: (T) -> Int = { 0 },
+    order: (T) -> String,
+): List<T> {
+    val sorted = items.sortedWith(
+        compareByDescending<T>(priority).thenByDescending(width).thenBy(order),
+    )
     if (sorted.isEmpty()) return sorted
     val arranged = ArrayDeque<T>()
     arranged.addLast(sorted.first())
     var leftWidth = 0.0
     var rightWidth = 0.0
-    for (item in sorted.drop(1)) {
+    // Remaining items are placed widest-first so the two sides stay balanced; the centered item's
+    // own priority must not leak into that ordering.
+    for (item in sorted.drop(1).sortedWith(compareByDescending<T>(width).thenBy(order))) {
         if (leftWidth < rightWidth) {
             arranged.addFirst(item)
             leftWidth += width(item)
@@ -99,7 +112,8 @@ class WalkerLayoutEngine : LayoutEngine {
             if (componentNodes.isEmpty()) return@mapNotNull null
             placeComponent(request, assignment.generations, componentNodes)
         }
-        val orderedComponents = balancedOrder(placedComponents, { Rect.enclosing(it.nodes.values).width }, { it.order })
+        val orderedComponents =
+            balancedOrder(placedComponents, { Rect.enclosing(it.nodes.values).width }, order = { it.order })
 
         val nodes = mutableMapOf<NodeId, Rect>()
         val waypoints = mutableMapOf<Pair<NodeId, NodeId>, List<Point>>()
@@ -223,11 +237,43 @@ class WalkerLayoutEngine : LayoutEngine {
             top += generationHeights.getValue(generation) + options.generationSpacing
         }
 
+        // Which spouse sits on which side of the couple box is decided here rather than in
+        // spouseGroups, because it depends on where each member's own family actually ended up -
+        // information that only exists once coordinates are assigned. Ordering members by name (the
+        // order spouseGroups produces) put a spouse on the side facing AWAY from their own parents,
+        // so their parentage edge had to reach back across their partner's box, crossing whatever
+        // ran between. Confirmed against a real family tree: a wife sat left of her husband while
+        // her parents and four siblings were off to the right, so her edge crossed both her husband
+        // and his own descending line.
+        //
+        // Members with no parents of their own keep their relative order and stay where they are;
+        // only a member whose parents sit on a definite side gets pulled to that side.
+        val orientedMembers = realGroups.associateWith { group ->
+            if (group.nodes.size <= 1) {
+                group.nodes
+            } else {
+                val groupCenter = centers.getValue(group)
+                // Negative pulls a member left, positive right, null leaves it in place.
+                val pull = group.nodes.associateWith { node ->
+                    val parentCenters = nodeParentsOf[node].orEmpty()
+                        .mapNotNull { groupByNode[it] }
+                        .filter { it != group }
+                        .mapNotNull(centers::get)
+                    if (parentCenters.isEmpty()) null else parentCenters.average() - groupCenter
+                }
+                if (pull.values.all { it == null }) {
+                    group.nodes
+                } else {
+                    group.nodes.sortedBy { pull[it] ?: 0.0 }
+                }
+            }
+        }
+
         val nodes = buildMap {
             for (group in realGroups) {
                 val groupWidth = widths.getValue(group)
                 var left = centers.getValue(group) - groupWidth / 2.0
-                for (id in group.nodes) {
+                for (id in orientedMembers.getValue(group)) {
                     val size = request.metrics.sizeOf(id)
                     put(id, Rect(left, generationTops.getValue(generations.getValue(id)), size.width, size.height))
                     left += size.width + options.spouseSpacing
@@ -269,7 +315,7 @@ class WalkerLayoutEngine : LayoutEngine {
                 }
             }
             nodes.sortBy(graph::orderOf)
-            groups += Group(nodes, nodes.joinToString(" ") { graph.orderOf(it) }, generation)
+            groups += Group(nodes, nodes.joinToString(" ") { graph.orderOf(it) }, generation)
         }
         return groups.sortedBy { it.order }
     }

@@ -153,17 +153,34 @@ internal object LayerOrdering {
             }
         }
 
+        // How many further generations the lineage continues through this group. Among siblings,
+        // the one with the deepest continuation is the group that carries the family line onward,
+        // and that is the one a reader expects to find directly beneath the shared parent - with
+        // the siblings arranged around it.
+        //
+        // Width (the sole previous criterion) is the wrong measure for this: a childless sibling
+        // who merely has a spouse recorded occupies a box twice as wide as a lone lineage-carrying
+        // child, so balancedOrder handed such a sibling the center and pushed the real blood line
+        // out to the edge of the row. Confirmed against a real family tree: a father sat above a
+        // son who had been displaced to the opposite end of his row, his siblings filling the space
+        // directly under the father, making the direct line visibly jog sideways at that generation.
+        val lineageDepth = mutableMapOf<Group, Int>()
+        fun depthOf(group: Group): Int = lineageDepth.getOrPut(group) {
+            (childrenOf[group].orEmpty().maxOfOrNull(::depthOf) ?: -1) + 1
+        }
+
         val order = mutableMapOf<Int, List<Group>>()
         var previousRow = emptyList<Group>()
         for (generation in generations) {
             val row = groups.filter { it.generation == generation }
             order[generation] = if (previousRow.isEmpty()) {
-                balancedOrder(row, ::widthOf) { it.order }
+                balancedOrder(row, ::widthOf, ::depthOf) { it.order }
             } else {
                 val clustered = previousRow.flatMap { parent ->
-                    balancedOrder(row.filter { primaryParent[it] == parent }, ::widthOf) { it.order }
+                    balancedOrder(row.filter { primaryParent[it] == parent }, ::widthOf, ::depthOf) { it.order }
                 }
-                val orphans = balancedOrder(row.filter { primaryParent[it] !in previousRow }, ::widthOf) { it.order }
+                val orphans =
+                    balancedOrder(row.filter { primaryParent[it] !in previousRow }, ::widthOf, ::depthOf) { it.order }
                 clustered + orphans
             }
             previousRow = order.getValue(generation)
@@ -211,10 +228,24 @@ internal object LayerOrdering {
                 return position + (memberIndex.toDouble() / (members.size - 1)) * NODE_FRACTION_SPAN
             }
 
+            // Barycenters are positions in the row being READ, while a group with no neighbor there
+            // has only its own row index to fall back on - two different coordinate systems, and
+            // comparing them directly is meaningless. On an upward sweep an only-child lineage
+            // scored its child's position (0) while its four childless siblings fell back to their
+            // own indices (1..4), so the lineage sorted to the row's left edge purely because the
+            // two rows have different lengths, not because the drawing called for it. That is what
+            // pushed a lineage-carrying child off the center spot beneath its parent - the sideways
+            // jog reported against a real family tree.
+            //
+            // So an unanchored group's own-row index is rescaled onto the read row's index range,
+            // putting both on one comparable axis.
+            val rowSpan = (row.size - 1).coerceAtLeast(1)
+            val primarySpan = (primaryPosition.size - 1).coerceAtLeast(1)
             fun barycenter(group: Group): Double {
                 val positions = group.nodes.flatMap { node -> primaryNodeNeighbors[node].orEmpty() }
                     .mapNotNull(::nodeFraction)
-                return if (positions.isEmpty()) currentPosition.getValue(group).toDouble() else positions.average()
+                if (positions.isNotEmpty()) return positions.average()
+                return currentPosition.getValue(group).toDouble() / rowSpan * primarySpan
             }
 
             // Groups sharing the same primary parent form one sibling cluster that must stay
@@ -298,7 +329,19 @@ internal object LayerOrdering {
         childGroupsOf: Map<Group, List<Group>>,
     ): Int {
         val lowerPosition = positionIndex(lower)
-        val positions = upper.flatMap { group -> childGroupsOf.getValue(group).mapNotNull(lowerPosition::get) }
+        // Each upper group's own child positions are sorted before being concatenated. Two edges
+        // leaving the SAME upper group share an endpoint and therefore can never cross each other,
+        // so any inversion among them is not a crossing - but childGroupsOf lists children in edge
+        // insertion order, so without sorting those phantom inversions get counted as real ones.
+        // That made the score depend on the order relations happened to be recorded rather than on
+        // the drawing: a single parent with five children scored 6 "crossings" for one row order and
+        // 5 for another, when a lone parent's edges cannot cross at all. `order` keeps the
+        // lowest-scoring row it sees, so it was actively discarding correct arrangements in favour
+        // of whichever one best matched the adjacency list - which is what pulled a lineage-carrying
+        // child off the center position under its parent and out toward the row's edge.
+        val positions = upper.flatMap { group ->
+            childGroupsOf.getValue(group).mapNotNull(lowerPosition::get).sorted()
+        }
         return countInversions(positions)
     }
 

@@ -32,8 +32,6 @@ import me.terevo.ui.Strings
 import me.terevo.ui.person.RelationMode
 import me.terevo.ui.person.spouseActionLabel
 import me.terevo.ui.theme.TerevoTheme
-import kotlin.math.abs
-import kotlin.math.pow
 
 private data class PersonContextMenu(val nodeId: NodeId, val position: Offset)
 
@@ -72,13 +70,13 @@ fun TreeCanvas(
                             val event = awaitPointerEvent()
                             if (event.type != PointerEventType.Scroll) continue
                             val change = event.changes.firstOrNull() ?: continue
-                            // A trackpad fires many more scroll events per gesture than a wheel
-                            // mouse's discrete notches, each with a smaller delta. Scaling the
-                            // factor by that delta's magnitude (instead of a fixed step per event)
-                            // keeps zoom speed proportional to actual scroll input regardless of
-                            // how often the device reports events.
-                            val magnitude = abs(change.scrollDelta.y).toDouble().coerceIn(0.0, MAX_SCROLL_MAGNITUDE)
-                            val factor = ZOOM_SENSITIVITY.pow(if (change.scrollDelta.y > 0f) -magnitude else magnitude)
+                            if (change.scrollDelta.y == 0f) continue
+                            // Every scroll event applies the same small step, so only the DIRECTION
+                            // of the scroll is read and its magnitude ignored. Scaling the step by
+                            // the reported delta made a hard flick zoom far faster than a gentle
+                            // one and behave differently on a trackpad than on a wheel mouse; a
+                            // fixed step is predictable and stays slow however hard the input.
+                            val factor = if (change.scrollDelta.y > 0f) 1.0 / ZOOM_STEP else ZOOM_STEP
                             onIntent(TreeCanvasIntent.Zoom(change.position.toPoint(), factor))
                         }
                     }
@@ -205,5 +203,5 @@ private val CameraVectorConverter = TwoWayConverter<Camera, AnimationVector3D>(
     },
 )
 
-private const val ZOOM_SENSITIVITY: Double = 1.035
-private const val MAX_SCROLL_MAGNITUDE: Double = 3.0
+// Constant zoom step per scroll event, deliberately small so zooming stays slow and controllable.
+private const val ZOOM_STEP: Double = 1.02

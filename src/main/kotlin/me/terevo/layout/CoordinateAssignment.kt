@@ -149,19 +149,79 @@ internal object CoordinateAssignment {
         }
 
         relaxToConvergence()
-        compactClusters(generations, order, centers, widths, cluster, ::gapBetween)
+
+        // Two clusters that never directly connect at this generation boundary (their only
+        // real link is several generations further down, through a shared marriage) can be
+        // ordered LEFT-of-the-other in one row and RIGHT-of-the-other in the very next row:
+        // crossing-minimization scores each row independently against its own immediate
+        // neighbors, so nothing stops it from "freezing" adjacent rows at different sweep
+        // iterations that each locally looked best but mutually disagree on which of two
+        // unrelated branches goes on which side (confirmed against a real family tree: the
+        // in-law branch sat LEFT of the direct bloodline one generation down, and RIGHT of it
+        // one generation up, with no edge connecting them directly at either boundary). A
+        // single rigid per-cluster offset is only well-defined when every row agrees on
+        // left-right cluster order - so canonicalize it first.
+        val canonicalOrder = canonicalizeClusterOrder(generations, order, cluster)
+        compactClusters(generations, canonicalOrder, centers, widths, cluster, ::gapBetween)
 
         // One final safety pass over the offset-adjusted positions for same-cluster sibling
         // overlap (e.g. a wide sub-branch's own row needing extra room from its own
         // sibling) - a purely local correction now, since compactClusters already
         // guarantees no cross-cluster overlap at any row.
         for (generation in generations) {
-            val row = order.getValue(generation)
+            val row = canonicalOrder.getValue(generation)
             val resolved = resolveOverlaps(row, centers, widths, ::gapBetween)
             for (group in row) centers[group] = resolved.getValue(group)
         }
 
         return centers
+    }
+
+    // Reorders each row's groups so that whenever two groups belong to different clusters,
+    // their left-right order agrees with every other row's order for that same cluster
+    // pair - resolving the inconsistency described above. Grouping by cluster and sorting
+    // the blocks (rather than sorting individual groups) keeps each cluster's own internal
+    // order exactly as crossing-minimization produced it; only the relative placement of
+    // whole unrelated blocks can change.
+    //
+    // Rather than sorting every row by some global summary (e.g. each cluster's average
+    // center across all rows), which would happily "fix" a pair that was never actually in
+    // conflict just because a third, unrelated row leans the other way, this walks rows top
+    // to bottom (ancestors first) and grows one running left-right cluster order: the first
+    // row two clusters both appear in decides their relative order for every row after; a
+    // cluster seen for the first time is slotted into the running order at the position its
+    // own row's crossing-minimized order already implied, relative to whichever
+    // already-known clusters share that row. Two clusters that never appear in the same row
+    // as each other never get an order imposed between them - harmless, since compactClusters
+    // never needs one (a difference constraint only comes from two clusters actually being
+    // adjacent somewhere).
+    private fun canonicalizeClusterOrder(
+        generations: List<Int>,
+        order: Map<Int, List<Group>>,
+        cluster: Map<Group, Group>,
+    ): Map<Int, List<Group>> {
+        fun clusterOf(group: Group): Group = cluster[group] ?: group
+        val globalOrder = mutableListOf<Group>()
+        val result = mutableMapOf<Int, List<Group>>()
+        for (generation in generations) {
+            val row = order.getValue(generation)
+            val blocks = row.groupBy(::clusterOf)
+            val rowClusterSequence = row.map(::clusterOf).distinct()
+
+            for (clusterId in rowClusterSequence) {
+                if (clusterId in globalOrder) continue
+                val precedingKnown = rowClusterSequence
+                    .takeWhile { it != clusterId }
+                    .lastOrNull { it in globalOrder }
+                val insertAt = precedingKnown?.let { globalOrder.indexOf(it) + 1 } ?: 0
+                globalOrder.add(insertAt, clusterId)
+            }
+
+            result[generation] = blocks.keys
+                .sortedBy { globalOrder.indexOf(it) }
+                .flatMap { blocks.getValue(it) }
+        }
+        return result
     }
 
     // Moves each blood-lineage cluster (LayerOrdering's `cluster` map: every group's
@@ -170,9 +230,10 @@ internal object CoordinateAssignment {
     // yields a difference constraint - "the right cluster's offset must be at least this
     // much more than the left cluster's offset" - and the tightest constraint per cluster
     // pair (across every generation they coexist in) wins. Solved as a longest-path
-    // relaxation over the (small - a few dozen at most) cluster graph: since clusters stay
-    // contiguous within every row (LayerOrdering's own invariant), this graph is a DAG in
-    // practice and settles in at most one pass per cluster.
+    // relaxation over the (small - a few dozen at most) cluster graph: `order` here is
+    // expected to already be canonicalizeClusterOrder's output, so every row agrees on
+    // cluster left-right order and this graph is a genuine DAG, settling in at most one
+    // pass per cluster.
     private fun compactClusters(
         generations: List<Int>,
         order: Map<Int, List<Group>>,
