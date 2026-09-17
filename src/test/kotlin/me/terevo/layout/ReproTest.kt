@@ -157,15 +157,18 @@ class ReproTest {
             println("REPRO gen2 ${state.layout.nodes[id]} $person")
         }
 
-        val violettaId = "48c81d1b-60bc-4be9-b97b-af83401e41f8"
-        val exported = me.terevo.export.ExportTreeMapper.map(
-            tree,
-            me.terevo.layout.LayoutOptions(
-                root = NodeId(violettaId),
-                mode = me.terevo.layout.LayoutMode.ANCESTORS,
-                depth = 6,
-            ),
+        // The screenshot's "Главный" (root) label is on Nikolai, NOT Violetta - the real
+        // app's selected/root person is Nikolai, viewed in BOTH mode from his perspective.
+        val realOptions = me.terevo.layout.LayoutOptions(
+            root = nikolaiS,
+            mode = me.terevo.layout.LayoutMode.BOTH,
+            depth = me.terevo.layout.LayoutOptions.UNLIMITED_DEPTH,
         )
+        // Uses the SAME mapper the real app's canvas uses (per-name card widths), not
+        // ExportTreeMapper's flat 240x72 card size - the flat size was hiding real
+        // overlaps caused by long names getting wider boxes on screen than in export.
+        val real = TreeCanvasMapper.map(tree, realOptions)
+        val exported = me.terevo.export.ExportTreeMapper.map(tree, realOptions)
         val pdfPath = "${System.getenv("TMPDIR")?.trimEnd('/')}/repro.pdf"
         org.apache.pdfbox.pdmodel.PDDocument().use { document ->
             val font = me.terevo.export.PdfFiles::class.java.getResourceAsStream("/fonts/PTSans-Regular.ttf")
@@ -180,6 +183,80 @@ class ReproTest {
             println("REPRO page ${page.index} bounds=${page.worldBounds}")
         }
         println("REPRO pdf written to $pdfPath")
+
+        // ANCESTORS-mode layout (matches the real screenshot) - check for tight/overlapping
+        // gaps row by row, since the WHOLE_FAMILY `state` above filters differently.
+        val ancestorsGenerations = exported.layout.generations.values.distinct().sorted()
+        for (gen in ancestorsGenerations) {
+            val idsInRow = exported.layout.generations.filterValues { it == gen }.keys
+                .sortedBy { exported.layout.nodes.getValue(it).left }
+            println("REPRO ANCESTORS gen=$gen row:")
+            var previous: Rect? = null
+            var previousId: NodeId? = null
+            for (id in idsInRow) {
+                val rect = exported.layout.nodes.getValue(id)
+                val person = personById[me.terevo.domain.model.PersonId.parse(id.value)]
+                val gap = previous?.let { rect.left - (it.left + it.width) }
+                println("REPRO ANCESTORS   $id $person rect=$rect gapFromPrevious=$gap prev=$previousId")
+                previous = rect
+                previousId = id
+            }
+        }
+
+        // Same check, but using the REAL app's per-name card widths (TreeCanvasMapper),
+        // not the flat 240x72 export card size - long names get wider boxes on screen.
+        val realGenerations = real.layout.generations.values.distinct().sorted()
+        for (gen in realGenerations) {
+            val idsInRow = real.layout.generations.filterValues { it == gen }.keys
+                .sortedBy { real.layout.nodes.getValue(it).left }
+            println("REPRO REAL gen=$gen row:")
+            var previous: Rect? = null
+            var previousId: NodeId? = null
+            for (id in idsInRow) {
+                val rect = real.layout.nodes.getValue(id)
+                val person = personById[me.terevo.domain.model.PersonId.parse(id.value)]
+                val gap = previous?.let { rect.left - (it.left + it.width) }
+                println("REPRO REAL   $id $person rect=$rect gapFromPrevious=$gap prev=$previousId")
+                previous = rect
+                previousId = id
+            }
+        }
+
+        // Check for two DIFFERENT edges' line segments literally coinciding on screen (not just
+        // nodes being close) - the user reported connector lines from unrelated branches running
+        // right on top of each other, not just crowded boxes.
+        data class Seg(val edgeIndex: Int, val a: Point, val b: Point)
+        val segs = real.layout.edges.flatMapIndexed { edgeIndex, path ->
+            path.segments.zipWithNext { a, b -> Seg(edgeIndex, a, b) }
+        }
+        fun overlap1d(a1: Double, a2: Double, b1: Double, b2: Double): Double {
+            val lo = maxOf(minOf(a1, a2), minOf(b1, b2))
+            val hi = minOf(maxOf(a1, a2), maxOf(b1, b2))
+            return maxOf(0.0, hi - lo)
+        }
+        for (i in segs.indices) {
+            for (j in i + 1 until segs.size) {
+                val s1 = segs[i]
+                val s2 = segs[j]
+                if (s1.edgeIndex == s2.edgeIndex) continue
+                val horiz1 = kotlin.math.abs(s1.a.y - s1.b.y) < 0.5
+                val horiz2 = kotlin.math.abs(s2.a.y - s2.b.y) < 0.5
+                val vert1 = kotlin.math.abs(s1.a.x - s1.b.x) < 0.5
+                val vert2 = kotlin.math.abs(s2.a.x - s2.b.x) < 0.5
+                val coincide = when {
+                    horiz1 && horiz2 && kotlin.math.abs(s1.a.y - s2.a.y) < 0.5 ->
+                        overlap1d(s1.a.x, s1.b.x, s2.a.x, s2.b.x) > 0.5
+                    vert1 && vert2 && kotlin.math.abs(s1.a.x - s2.a.x) < 0.5 ->
+                        overlap1d(s1.a.y, s1.b.y, s2.a.y, s2.b.y) > 0.5
+                    else -> false
+                }
+                if (coincide) {
+                    val e1 = real.layout.edges[s1.edgeIndex].edge
+                    val e2 = real.layout.edges[s2.edgeIndex].edge
+                    println("REPRO OVERLAP seg1=$e1 ${s1.a}->${s1.b}  seg2=$e2 ${s2.a}->${s2.b}")
+                }
+            }
+        }
 
         driver.close()
     }

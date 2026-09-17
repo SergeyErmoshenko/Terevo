@@ -162,7 +162,9 @@ internal object CoordinateAssignment {
         // single rigid per-cluster offset is only well-defined when every row agrees on
         // left-right cluster order - so canonicalize it first.
         val canonicalOrder = canonicalizeClusterOrder(generations, order, cluster)
-        compactClusters(generations, canonicalOrder, centers, widths, cluster, ::gapBetween)
+        compactClusters(
+            generations, canonicalOrder, centers, widths, groupOf, nodeParentsOf, cluster, ::gapBetween,
+        )
 
         // One final safety pass over the offset-adjusted positions for same-cluster sibling
         // overlap (e.g. a wide sub-branch's own row needing extra room from its own
@@ -239,6 +241,8 @@ internal object CoordinateAssignment {
         order: Map<Int, List<Group>>,
         centers: MutableMap<Group, Double>,
         widths: Map<Group, Double>,
+        groupOf: Map<NodeId, Group>,
+        nodeParentsOf: Map<NodeId, List<NodeId>>,
         cluster: Map<Group, Group>,
         gapBetween: (Group, Group) -> Double,
     ) {
@@ -279,8 +283,50 @@ internal object CoordinateAssignment {
             if (!changed) break
         }
 
+        // A married couple is merged into ONE group, but LayerOrdering can only put that group in a
+        // single cluster - so a couple bridging two lineages is rigidly welded to whichever side
+        // won, and inherits that side's offset alone. When separating the two lineages costs more
+        // room than the couple's own box provides (two in-law couples must sit clusterSpacing
+        // apart, while the two children they each sit above share one box only spouseSpacing wide),
+        // the whole unavoidable deficit lands on the losing side: its parents sat 520px from their
+        // own child while the winning side's sat exactly above theirs, dragging that connector back
+        // across the full row - which is what made the two lines above a couple overlap into one
+        // thick line on a real family tree.
+        //
+        // The deficit itself is geometry and cannot be removed, only shared. A group whose members'
+        // parents live in several clusters is therefore shifted to the AVERAGE of those clusters'
+        // offsets instead of just its own, which centers it between the lineages pulling on it and
+        // splits the deficit evenly.
+        //
+        // That shift must then carry DOWN to the group's own descendants. Moving a bridging couple
+        // alone tears it away from the children below it, which still sat at their cluster's
+        // unshifted offset - the couple's own child ended up 164px off the couple's midpoint, the
+        // same "a shove on one row never reaches the descendants who never saw it" failure the
+        // header comment above warns about. Descendants therefore inherit their parents' shift, so
+        // the moved block stays rigid relative to everything hanging off it.
+        val shift = mutableMapOf<Group, Double>()
+        for (generation in generations) {
+            for (group in order.getValue(generation)) {
+                val ownCluster = clusterOf(group)
+                val parentGroups = group.nodes
+                    .flatMap { nodeParentsOf[it].orEmpty() }
+                    .mapNotNull { groupOf[it] }
+                    .distinct()
+                val parentClusters = parentGroups.map(::clusterOf).distinct()
+                shift[group] = if (parentClusters.size > 1) {
+                    parentClusters.map(offset::getValue).average() - offset.getValue(ownCluster)
+                } else {
+                    val inherited = parentGroups
+                        .filter { clusterOf(it) == ownCluster }
+                        .mapNotNull { shift[it] }
+                    if (inherited.isEmpty()) 0.0 else inherited.average()
+                }
+            }
+        }
+
         for (group in centers.keys.toList()) {
-            centers[group] = relaxed.getValue(group) + offset.getValue(clusterOf(group))
+            centers[group] =
+                relaxed.getValue(group) + offset.getValue(clusterOf(group)) + (shift[group] ?: 0.0)
         }
     }
 

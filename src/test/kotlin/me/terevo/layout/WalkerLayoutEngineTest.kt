@@ -33,7 +33,7 @@ class WalkerLayoutEngineTest {
                 listOf("grandparent", "parent", "child"),
                 listOf(parentage("grandparent", "parent"), parentage("parent", "child")),
             ),
-            "child=0,320|grandparent=0,0|parent=0,160",
+            "child=0,448|grandparent=0,0|parent=0,224",
         )
     }
 
@@ -51,7 +51,7 @@ class WalkerLayoutEngineTest {
                     parentage("second", "childB"),
                 ),
             ),
-            "childA=96,160|childB=288,160|first=0,0|person=192,0|second=384,0",
+            "childA=92,224|childB=292,224|first=0,0|person=192,0|second=384,0",
         )
     }
 
@@ -62,7 +62,7 @@ class WalkerLayoutEngineTest {
                 listOf("father", "mother", "child"),
                 listOf(parentage("father", "child"), parentage("mother", "child")),
             ),
-            "child=96,160|father=0,0|mother=192,0",
+            "child=96,224|father=0,0|mother=192,0",
         )
     }
 
@@ -70,7 +70,7 @@ class WalkerLayoutEngineTest {
     fun `golden adoption uses the same geometry as parentage`() {
         assertGolden(
             graphOf(listOf("parent", "child"), listOf(parentage("parent", "child", biological = false))),
-            "child=0,160|parent=0,0",
+            "child=0,224|parent=0,0",
         )
     }
 
@@ -196,7 +196,7 @@ class WalkerLayoutEngineTest {
         val aRect = layout.rectOf(nodeId("a"))!!
         val bRect = layout.rectOf(nodeId("b"))!!
 
-        assertEquals(24.0, aRect.left - bRect.right)
+        assertTrue(kotlin.math.abs(40.0 - (aRect.left - bRect.right)) < 0.01)
         assertNoOverlaps(layout)
         assertEquals(layout, engine.layout(LayoutRequest(graph, metrics)))
     }
@@ -370,6 +370,111 @@ class WalkerLayoutEngineTest {
     }
 
     @Test
+    fun `descendants of a couple bridging two lineages move with it instead of being left behind`() {
+        // "husband" and "wife" come from two different lineages, so their merged group bridges two
+        // clusters and gets shifted to sit between them (see compactClusters). Their own child
+        // "descendant" must travel with that shift.
+        //
+        // Shifting the couple alone tore it away from the generation below, which stayed at its
+        // cluster's unshifted offset - the child landed 164px off its own parents' midpoint, which
+        // is the "a shove on one row never reaches the descendants who never saw it" failure the
+        // header comment in CoordinateAssignment warns about. Reported as the youngest descendant
+        // visibly sliding sideways out from under her parents.
+        val graph = graphOf(
+            nodes = listOf("hisParent", "herParent", "husband", "wife", "descendant"),
+            edges = listOf(
+                parentage("hisParent", "husband"),
+                parentage("herParent", "wife"),
+                union("husband", "wife"),
+                parentage("husband", "descendant"),
+                parentage("wife", "descendant"),
+            ),
+        )
+
+        val layout = engine.layout(LayoutRequest(graph, metrics))
+
+        val coupleMidpoint = (
+            layout.rectOf(nodeId("husband"))!!.centerX + layout.rectOf(nodeId("wife"))!!.centerX
+            ) / 2.0
+        val descendantCenter = layout.rectOf(nodeId("descendant"))!!.centerX
+        val drift = kotlin.math.abs(descendantCenter - coupleMidpoint)
+
+        assertTrue(
+            drift <= 1.0,
+            "the only child of a lineage-bridging couple sits ${drift}px off their midpoint " +
+                "(child $descendantCenter vs midpoint $coupleMidpoint) - it was left behind when " +
+                "the couple was shifted between clusters",
+        )
+        assertNoOverlaps(layout)
+        assertEquals(layout, engine.layout(LayoutRequest(graph, metrics)))
+    }
+
+    @Test
+    fun `two in-law couples share the unavoidable drift instead of one taking all of it`() {
+        // A couple ("husband"+"wife") where BOTH members have their own parents recorded:
+        // "hisFather"+"hisMother" above him, "herFather"+"herMother" above her. Each grandparent
+        // couple is the root of its own cluster, tied to the tree only through their one child.
+        //
+        // Some drift here is geometry, not a defect: two 352px-wide couple boxes in different
+        // clusters must be at least (176 + siblingSpacing + clusterSpacing + 176) apart, while the
+        // two children they sit above share ONE box and are only (NODE_WIDTH + spouseSpacing)
+        // apart. The difference cannot be removed by any placement - it can only be distributed.
+        //
+        // What matters is that neither side absorbs all of it: one couple sitting exactly above its
+        // child while the other takes the entire deficit drags that second couple's connector back
+        // across the whole row. This asserts the deficit is shared roughly evenly.
+        val graph = graphOf(
+            nodes = listOf(
+                "hisFather", "hisMother",
+                "herFather", "herMother",
+                "husband", "wife",
+                "child",
+            ),
+            edges = listOf(
+                union("hisFather", "hisMother"),
+                parentage("hisFather", "husband"),
+                parentage("hisMother", "husband"),
+
+                union("herFather", "herMother"),
+                parentage("herFather", "wife"),
+                parentage("herMother", "wife"),
+
+                union("husband", "wife"),
+                parentage("husband", "child"),
+                parentage("wife", "child"),
+            ),
+        )
+
+        val options = LayoutOptions()
+        val layout = engine.layout(LayoutRequest(graph, metrics, options))
+
+        val coupleWidth = 2 * NODE_WIDTH + options.spouseSpacing
+        val unavoidable =
+            (coupleWidth + options.siblingSpacing + options.clusterSpacing) - (NODE_WIDTH + options.spouseSpacing)
+
+        val drifts = listOf(
+            Triple("hisFather", "hisMother", "husband"),
+            Triple("herFather", "herMother", "wife"),
+        ).map { (father, mother, ownChild) ->
+            val midpoint = (
+                layout.rectOf(nodeId(father))!!.centerX + layout.rectOf(nodeId(mother))!!.centerX
+                ) / 2.0
+            kotlin.math.abs(midpoint - layout.rectOf(nodeId(ownChild))!!.centerX)
+        }
+
+        // Neither couple may carry substantially more than its half of the unavoidable deficit.
+        val fairShare = unavoidable / 2.0 + NODE_WIDTH / 2.0
+        assertTrue(
+            drifts.all { it <= fairShare },
+            "expected the unavoidable ${unavoidable}px deficit to be shared (about " +
+                "${unavoidable / 2.0}px each), but the two in-law couples drifted $drifts - " +
+                "one of them absorbed nearly all of it and its connector runs back across the row",
+        )
+        assertNoOverlaps(layout)
+        assertEquals(layout, engine.layout(LayoutRequest(graph, metrics, options)))
+    }
+
+    @Test
     fun `a spouse faces the side their own family is on so the parentage edge does not cross their partner`() {
         // Anonymized reproduction of a real reported bug. "husband" and "wife" are merged into one
         // couple box by spouseGroups, which orders the members by name - so whether a member ends up
@@ -510,7 +615,7 @@ class WalkerLayoutEngineTest {
     fun `golden disconnected components are spaced horizontally`() {
         assertGolden(
             graphOf(listOf("a", "b", "c"), listOf(parentage("a", "b"))),
-            "a=0,0|b=0,160|c=208,0",
+            "a=0,0|b=0,224|c=208,0",
         )
     }
 
@@ -526,9 +631,9 @@ class WalkerLayoutEngineTest {
 
         val minLeft = children.minOf { layout.rectOf(nodeId(it))!!.left }
         val maxRight = children.maxOf { layout.rectOf(nodeId(it))!!.right }
-        assertEquals(Rect(18_308.0, 0.0, 160.0, 64.0), layout.rectOf(nodeId("parent")))
+        assertEquals(Rect(19_900.0, 0.0, 160.0, 64.0), layout.rectOf(nodeId("parent")))
         assertEquals(0.0, minLeft)
-        assertEquals(36_776.0, maxRight)
+        assertEquals(39_960.0, maxRight)
         assertNoOverlaps(layout)
         assertEquals(layout, engine.layout(LayoutRequest(graph, metrics)))
     }
@@ -544,7 +649,7 @@ class WalkerLayoutEngineTest {
         val layout = engine.layout(LayoutRequest(graph, metrics))
 
         assertEquals(Rect(0.0, 0.0, 160.0, 64.0), layout.rectOf(nodeId("person00")))
-        assertEquals(Rect(0.0, 3_040.0, 160.0, 64.0), layout.rectOf(nodeId("person19")))
+        assertEquals(Rect(0.0, 4_256.0, 160.0, 64.0), layout.rectOf(nodeId("person19")))
         assertNoOverlaps(layout)
         assertEquals(layout, engine.layout(LayoutRequest(graph, metrics)))
     }

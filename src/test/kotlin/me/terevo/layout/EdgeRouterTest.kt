@@ -17,7 +17,7 @@ class EdgeRouterTest {
         assertEquals(
             EdgePath(
                 edge = edge,
-                segments = listOf(Point(80.0, 64.0), Point(80.0, 88.0), Point(80.0, 88.0), Point(80.0, 160.0)),
+                segments = listOf(Point(80.0, 64.0), Point(80.0, 104.0), Point(80.0, 104.0), Point(80.0, 224.0)),
                 style = EdgeStyle.BIOLOGICAL,
             ),
             layout.edges.single(),

@@ -24,17 +24,21 @@ internal object EdgeRouter {
         for (union in graph.unions) {
             routeUnion(union, graph, nodes, waypoints, brackets)?.let(::add)
         }
+        // Both parents of a shared child map to the same couple path, so it is emitted once -
+        // drawing it per parent stacked two identical lines on top of each other, which renders
+        // visibly darker than its neighbours wherever edges are drawn semi-transparent (see
+        // TreeRenderer's MUTED_ALPHA) and doubles the work for no visual gain.
+        val drawnBrackets = mutableSetOf<Pair<List<Point>, EdgeStyle>>()
         for (edge in graph.edges) {
             if (edge is LayoutEdge.Parentage) {
                 val bracket = brackets[edge.parent to edge.child]
                 if (bracket != null) {
-                    add(
-                        EdgePath(
-                            edge = edge,
-                            segments = bracket,
-                            style = if (edge.biological) EdgeStyle.BIOLOGICAL else EdgeStyle.NON_BIOLOGICAL,
-                        ),
-                    )
+                    // Keyed by style too, so a couple where one parent is adoptive still draws its
+                    // dashed line alongside the biological one instead of being deduplicated away.
+                    val style = if (edge.biological) EdgeStyle.BIOLOGICAL else EdgeStyle.NON_BIOLOGICAL
+                    if (drawnBrackets.add(bracket to style)) {
+                        add(EdgePath(edge = edge, segments = bracket, style = style))
+                    }
                 } else {
                     val chain = waypoints[edge.parent to edge.child].orEmpty()
                     routeParentage(edge, graph, nodes, chain)?.let(::add)
@@ -66,25 +70,32 @@ internal object EdgeRouter {
         }
 
         val parentsBottom = maxOf(first.bottom, second.bottom)
+        // Each parent's line drops from its own card to the bus and then runs to the couple's
+        // joining point, from where a single shared run continues to the child. Previously every
+        // parent's bus ran all the way to the CHILD's center, so whenever the couple sat off to one
+        // side of the child both buses covered the same span and the shorter lay entirely on top of
+        // the longer - confirmed against a real family tree, two connectors overlapping for 424px
+        // and reading as one thick line. Stopping each parent's bus at the joining point keeps the
+        // line visibly tied to both parents while the overlapping span collapses to a single run.
+        val joinX = (first.centerX + second.centerX) / 2.0
         for ((childId, childRect) in sharedChildren) {
             // The bus sits close under the parents rather than at the midpoint of the gap, so it
             // reads as a tight bracket hanging off the couple instead of a line that sags toward
             // the middle of open space - independent of how far away the next generation happens
             // to be.
             val busY = parentsBottom + (childRect.top - parentsBottom) * BUS_OFFSET_RATIO
-            // Each parent gets its own stem down to the shared bus, exactly like a plain
-            // (non-union) multi-parent Parentage edge - so the bar between the parents sits at the
-            // bus, not flush against the bottom of either parent's own card, and both stems
-            // converge on the same point into the child regardless of which parent is taller.
             for ((parentId, parentRect) in listOf(union.first to first, union.second to second)) {
                 val chain = waypoints[parentId to childId].orEmpty()
                 val segments = if (chain.isEmpty()) {
-                    listOf(
-                        Point(parentRect.centerX, parentRect.bottom),
-                        Point(parentRect.centerX, busY),
-                        Point(childRect.centerX, busY),
-                        childRect.topCenter,
-                    )
+                    buildList {
+                        add(Point(parentRect.centerX, parentRect.bottom))
+                        add(Point(parentRect.centerX, busY))
+                        add(Point(joinX, busY))
+                        // The descent to the child leaves from the joining point, shared by both
+                        // parents, so only one line spans the gap down to the child's row.
+                        if (childRect.centerX != joinX) add(Point(childRect.centerX, busY))
+                        add(childRect.topCenter)
+                    }
                 } else {
                     buildList {
                         add(Point(parentRect.centerX, parentRect.bottom))

@@ -43,11 +43,11 @@ data class LayoutOptions(
 ) {
     companion object {
         const val UNLIMITED_DEPTH: Int = Int.MAX_VALUE
-        const val DEFAULT_SIBLING_SPACING: Double = 24.0
+        const val DEFAULT_SIBLING_SPACING: Double = 40.0
         const val DEFAULT_SUBTREE_SPACING: Double = 48.0
-        const val DEFAULT_GENERATION_SPACING: Double = 96.0
+        const val DEFAULT_GENERATION_SPACING: Double = 160.0
         const val DEFAULT_SPOUSE_SPACING: Double = 32.0
-        const val DEFAULT_CLUSTER_SPACING: Double = 200.0
+        const val DEFAULT_CLUSTER_SPACING: Double = 320.0
     }
 }
 
