@@ -176,7 +176,72 @@ internal object CoordinateAssignment {
             for (group in row) centers[group] = resolved.getValue(group)
         }
 
+        straightenSingleChildren(generations, canonicalOrder, centers, widths, groupOf, nodeParentsOf, ::gapBetween)
+
         return centers
+    }
+
+    // Pulls a group onto its parents' own center where the row has room for it, so the connector
+    // between them is a single straight vertical line instead of stepping sideways.
+    //
+    // Relaxation averages every neighbor a group has, so a group also pulled on by its own children
+    // and its siblings settles near - but rarely exactly on - its parents' center, and the few
+    // pixels left over still render as a visible dog-leg right under the card. Widening a gap is
+    // never acceptable for this, but where neighbours leave genuine slack the offset is pure noise.
+    // Confirmed against a real family tree: an only child sat 30px off its parents' midpoint and
+    // its line visibly kinked just below the card.
+    //
+    // Only the slack already present is consumed - each group may move at most up to its
+    // neighbours' required gaps, so no spacing floor is ever broken and a row that is genuinely
+    // packed keeps its step. Later rows see earlier rows' adjusted positions, so a straightened
+    // parent lets its own child straighten onto the same line rather than chasing a stale target.
+    private fun straightenSingleChildren(
+        generations: List<Int>,
+        order: Map<Int, List<Group>>,
+        centers: MutableMap<Group, Double>,
+        widths: Map<Group, Double>,
+        groupOf: Map<NodeId, Group>,
+        nodeParentsOf: Map<NodeId, List<NodeId>>,
+        gapBetween: (Group, Group) -> Double,
+    ) {
+        for (generation in generations) {
+            val row = order.getValue(generation)
+            for ((index, group) in row.withIndex()) {
+                val parentGroups = group.nodes
+                    .flatMap { nodeParentsOf[it].orEmpty() }
+                    .mapNotNull { groupOf[it] }
+                    .distinct()
+                if (parentGroups.isEmpty()) continue
+
+                // Where the parents actually are now, which is the line worth lining up with.
+                val target = parentGroups.map(centers::getValue).average()
+                val current = centers.getValue(group)
+                val delta = target - current
+                if (kotlin.math.abs(delta) <= CONVERGENCE_THRESHOLD) continue
+
+                val halfWidth = widths.getValue(group) / 2.0
+                val room = if (delta > 0) {
+                    val right = row.getOrNull(index + 1)
+                    if (right == null) {
+                        Double.POSITIVE_INFINITY
+                    } else {
+                        (centers.getValue(right) - widths.getValue(right) / 2.0) -
+                            (current + halfWidth) - gapBetween(group, right)
+                    }
+                } else {
+                    val left = row.getOrNull(index - 1)
+                    if (left == null) {
+                        Double.POSITIVE_INFINITY
+                    } else {
+                        (current - halfWidth) -
+                            (centers.getValue(left) + widths.getValue(left) / 2.0) - gapBetween(left, group)
+                    }
+                }
+                if (room <= CONVERGENCE_THRESHOLD) continue
+
+                centers[group] = current + delta.coerceIn(-room, room)
+            }
+        }
     }
 
     // Reorders each row's groups so that whenever two groups belong to different clusters,

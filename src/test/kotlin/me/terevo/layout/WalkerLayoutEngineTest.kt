@@ -370,6 +370,74 @@ class WalkerLayoutEngineTest {
     }
 
     @Test
+    fun `an only child lines up exactly under its parents so the connector is straight`() {
+        // Relaxation averages every neighbor a group has, so a child also pulled on by its own
+        // descendants settles NEAR but not exactly on its parents' midpoint. The few pixels left
+        // over render as a visible dog-leg immediately under the card - reported on a real tree as
+        // connectors looking crooked. Where the row has room, the child should be exactly centered.
+        val graph = graphOf(
+            nodes = listOf("father", "mother", "child", "grandchild", "grandchildSpouse"),
+            edges = listOf(
+                union("father", "mother"),
+                parentage("father", "child"),
+                parentage("mother", "child"),
+                // Gives "child" a descendant of its own, so relaxation has a competing pull.
+                union("grandchild", "grandchildSpouse"),
+                parentage("child", "grandchild"),
+            ),
+        )
+
+        val layout = engine.layout(LayoutRequest(graph, metrics))
+
+        val parentsMidpoint = (
+            layout.rectOf(nodeId("father"))!!.centerX + layout.rectOf(nodeId("mother"))!!.centerX
+            ) / 2.0
+        val childCenter = layout.rectOf(nodeId("child"))!!.centerX
+
+        assertTrue(
+            kotlin.math.abs(childCenter - parentsMidpoint) <= 1.0,
+            "the only child sits ${childCenter - parentsMidpoint}px off its parents' midpoint " +
+                "($childCenter vs $parentsMidpoint), so its connector kinks just below the card",
+        )
+        assertNoOverlaps(layout)
+        assertEquals(layout, engine.layout(LayoutRequest(graph, metrics)))
+    }
+
+    @Test
+    fun `a child is not straightened onto its parents when the row has no room for it`() {
+        // The straightening above may only consume slack that already exists. A spouse whose own
+        // parents are off to one side must NOT be dragged toward them, because that would tear the
+        // couple box apart - the step in the connector is correct there.
+        val graph = graphOf(
+            nodes = listOf(
+                "herFather", "herMother",
+                "husband", "wife",
+                "child",
+            ),
+            edges = listOf(
+                union("herFather", "herMother"),
+                parentage("herFather", "wife"),
+                parentage("herMother", "wife"),
+                union("husband", "wife"),
+                parentage("husband", "child"),
+                parentage("wife", "child"),
+            ),
+        )
+
+        val layout = engine.layout(LayoutRequest(graph, metrics))
+
+        val husbandRect = layout.rectOf(nodeId("husband"))!!
+        val wifeRect = layout.rectOf(nodeId("wife"))!!
+        val spouseGap = maxOf(husbandRect.left, wifeRect.left) - minOf(husbandRect.right, wifeRect.right)
+
+        assertTrue(
+            spouseGap <= LayoutOptions().spouseSpacing + 1.0,
+            "the couple was pulled apart to $spouseGap px chasing the wife's own parents",
+        )
+        assertNoOverlaps(layout)
+    }
+
+    @Test
     fun `descendants of a couple bridging two lineages move with it instead of being left behind`() {
         // "husband" and "wife" come from two different lineages, so their merged group bridges two
         // clusters and gets shifted to sit between them (see compactClusters). Their own child

@@ -107,12 +107,15 @@ class KinshipCalculatorTest {
 
     private fun marriage(first: Person, second: Person) = Marriage.of(first = first.id, second = second.id).shouldBeOk()
 
-    private fun Fixture.term(a: Person, b: Person): String = when (val result = KinshipCalculator.resolve(tree, a.id, b.id)) {
-        is KinshipResult.Blood -> result.term
-        is KinshipResult.InLaw -> result.term
-        KinshipResult.SamePerson -> "SamePerson"
-        KinshipResult.Unrelated -> "Unrelated"
-    }
+    private fun Fixture.term(a: Person, b: Person): String = termOf(tree, a.id, b.id)
+
+    private fun termOf(tree: FamilyTree, ego: PersonId, target: PersonId): String =
+        when (val result = KinshipCalculator.resolve(tree, ego, target)) {
+            is KinshipResult.Blood -> result.term
+            is KinshipResult.InLaw -> result.term
+            KinshipResult.SamePerson -> "SamePerson"
+            KinshipResult.Unrelated -> "Unrelated"
+        }
 
     @Test
     fun `resolve returns SamePerson for identical ids`() {
@@ -160,6 +163,44 @@ class KinshipCalculatorTest {
     fun `great great grandfather resolves to Прапрадедушка`() {
         val fixture = Fixture()
         assertEquals("Прапрадедушка", fixture.term(fixture.ego, fixture.ggGreatGrandpa))
+    }
+
+    @Test
+    fun `beyond two repetitions the great prefix is counted instead of spelled out`() {
+        // "прапрапрапрадедушка" cannot be counted at a glance, so deeper generations switch to
+        // "пра(N)дедушка". Two or fewer stay spelled out as the familiar forms.
+        val chain = (0..7).map { person(givenName = "A$it", gender = Gender.MALE) }
+        val tree = FamilyTree.of(
+            persons = chain,
+            // chain[0] is the oldest; each is the parent of the next, so chain.last() is ego.
+            relations = chain.zipWithNext().map { (older, younger) -> parent(older, younger) },
+        ).shouldBeOk()
+        val egoId = chain.last().id
+        fun term(target: Person): String = termOf(tree, egoId, target.id)
+
+        assertEquals("Дедушка", term(chain[5]))
+        assertEquals("Прадедушка", term(chain[4]))
+        assertEquals("Прапрадедушка", term(chain[3]))
+        assertEquals("Пра(3)дедушка", term(chain[2]))
+        assertEquals("Пра(4)дедушка", term(chain[1]))
+        assertEquals("Пра(5)дедушка", term(chain[0]))
+    }
+
+    @Test
+    fun `beyond two repetitions descendant terms are counted too`() {
+        val chain = (0..7).map { person(givenName = "B$it", gender = Gender.FEMALE) }
+        val tree = FamilyTree.of(
+            persons = chain,
+            relations = chain.zipWithNext().map { (older, younger) -> parent(older, younger) },
+        ).shouldBeOk()
+        val egoId = chain.first().id
+        fun term(target: Person): String = termOf(tree, egoId, target.id)
+
+        assertEquals("Внучка", term(chain[2]))
+        assertEquals("Правнучка", term(chain[3]))
+        assertEquals("Праправнучка", term(chain[4]))
+        assertEquals("Пра(3)внучка", term(chain[5]))
+        assertEquals("Пра(5)внучка", term(chain[7]))
     }
 
     @Test

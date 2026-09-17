@@ -17,11 +17,53 @@ class EdgeRouterTest {
         assertEquals(
             EdgePath(
                 edge = edge,
-                segments = listOf(Point(80.0, 64.0), Point(80.0, 104.0), Point(80.0, 104.0), Point(80.0, 224.0)),
+                segments = listOf(Point(80.0, 64.0), Point(80.0, 118.0), Point(80.0, 118.0), Point(80.0, 224.0)),
                 style = EdgeStyle.BIOLOGICAL,
             ),
             layout.edges.single(),
         )
+    }
+
+    @Test
+    fun `the horizontal bus keeps clear space between itself and both rows of cards`() {
+        // The bus position used to be a plain fraction of the parent-to-child gap, which put the
+        // bar almost against the card edges whenever two generations sat close together, so the
+        // horizontal run visually merged with the card borders.
+        val edge = parentage("parent", "child")
+        val layout = layoutOf(listOf("parent", "child"), listOf(edge))
+
+        val parentRect = layout.nodes.getValue(NodeId("parent"))
+        val childRect = layout.nodes.getValue(NodeId("child"))
+        val busY = layout.edges.single().segments[1].y
+
+        val clearanceAbove = busY - parentRect.bottom
+        val clearanceBelow = childRect.top - busY
+        assertTrue(
+            clearanceAbove >= 24.0 && clearanceBelow >= 24.0,
+            "bus at y=$busY is crowded against the cards: ${clearanceAbove}px below the parent " +
+                "(bottom ${parentRect.bottom}) and ${clearanceBelow}px above the child (top ${childRect.top})",
+        )
+    }
+
+    @Test
+    fun `vertical runs are exactly vertical rather than a fraction of a pixel off`() {
+        // Relaxation produces floating-point centers, so a run meant to be vertical could span
+        // x=163.99999999 to x=164.00000001 and render as a faintly slanted or blurred stroke.
+        val marriage = union("father", "mother")
+        val layout = layoutOf(
+            listOf("father", "mother", "child"),
+            listOf(marriage, parentage("father", "child"), parentage("mother", "child")),
+        )
+
+        for (path in layout.edges) {
+            for ((a, b) in path.segments.zipWithNext()) {
+                val verticalish = a.x != b.x && kotlin.math.abs(a.x - b.x) < 1.0
+                assertTrue(
+                    !verticalish,
+                    "segment from (${a.x},${a.y}) to (${b.x},${b.y}) is a hair off vertical",
+                )
+            }
+        }
     }
 
     @Test

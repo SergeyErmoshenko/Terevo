@@ -4,6 +4,11 @@ import me.terevo.domain.model.Gender
 
 object KinshipTerms {
 
+    private const val GREAT_PREFIX: String = "пра"
+
+    // How many "пра" are spelled out before switching to the counted form.
+    private const val MAX_SPELLED_OUT_GREAT_PREFIXES: Int = 2
+
     fun spouseTerm(gender: Gender): String = when (gender) {
         Gender.MALE -> "Муж"
         Gender.FEMALE -> "Жена"
@@ -38,7 +43,7 @@ object KinshipTerms {
             Gender.UNKNOWN -> "Родитель"
         }
         2 -> grandparentTerm(gender)
-        else -> ("пра".repeat(distance - 2) + grandparentTerm(gender).lowercase()).replaceFirstChar(Char::uppercase)
+        else -> withGreatPrefix(distance - 2, grandparentTerm(gender))
     }
 
     private fun descendantTerm(distance: Int, gender: Gender): String = when (distance) {
@@ -48,7 +53,19 @@ object KinshipTerms {
             Gender.UNKNOWN -> "Ребёнок"
         }
         2 -> grandchildTerm(gender)
-        else -> ("пра".repeat(distance - 2) + grandchildTerm(gender).lowercase()).replaceFirstChar(Char::uppercase)
+        else -> withGreatPrefix(distance - 2, grandchildTerm(gender))
+    }
+
+    // Beyond two repetitions the spelled-out prefix stops being readable - "прапрапрапрадедушка"
+    // can't be counted at a glance - so the count is written out instead: "пра(4)дедушка". Two or
+    // fewer stay spelled out, since "прабабушка" and "прапрабабушка" are the familiar forms.
+    private fun withGreatPrefix(repetitions: Int, base: String): String {
+        val prefix = if (repetitions <= MAX_SPELLED_OUT_GREAT_PREFIXES) {
+            GREAT_PREFIX.repeat(repetitions)
+        } else {
+            "$GREAT_PREFIX($repetitions)"
+        }
+        return (prefix + base.lowercase()).replaceFirstChar(Char::uppercase)
     }
 
     private fun collateralTerm(stepsFromEgo: Int, stepsFromTarget: Int, gender: Gender): String {

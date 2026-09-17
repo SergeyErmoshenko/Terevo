@@ -3,9 +3,28 @@ package me.terevo.layout
 internal object EdgeRouter {
 
     // How far into the parent-to-child gap the horizontal bus sits, as a fraction of that gap's
-    // height, measured down from the parents. Kept small so the bracket reads as tight to the
-    // parents rather than floating in the middle of open space.
-    private const val BUS_OFFSET_RATIO: Double = 0.25
+    // height, measured down from the parents. Kept below half so the bracket reads as hanging off
+    // the parents rather than floating in the middle of open space.
+    private const val BUS_OFFSET_RATIO: Double = 0.34
+
+    // The bus never runs closer than this to either row of cards. The ratio alone put the bar
+    // almost against the card edges whenever two generations sat close together, so the horizontal
+    // run visually merged with the card borders; this keeps a readable band of clear space on both
+    // sides. Clamped against the gap's own height below, so a genuinely tight gap still routes.
+    private const val BUS_MIN_CLEARANCE: Double = 28.0
+
+    // Coordinates come out of relaxation as floating point, so a line meant to be vertical can end
+    // up spanning x=163.99999999 to x=164.00000001 - a hair off true vertical, which renders as a
+    // faintly slanted or blurred stroke instead of a crisp one. Snapping every routed point to
+    // whole pixels makes equal coordinates exactly equal, so vertical runs are actually vertical.
+    private fun Point.snapped(): Point = Point(kotlin.math.round(x), kotlin.math.round(y))
+
+    private fun busBetween(parentsBottom: Double, childTop: Double): Double {
+        val gap = childTop - parentsBottom
+        if (gap <= 0.0) return parentsBottom
+        val clearance = minOf(BUS_MIN_CLEARANCE, gap / 2.0)
+        return parentsBottom + (gap * BUS_OFFSET_RATIO).coerceIn(clearance, gap - clearance)
+    }
 
     // Waypoints let a Parentage edge that spans more than one generation (see GenerationAssigner's
     // partner-alignment relaxation) bend through the intermediate rows it actually crosses, instead
@@ -24,21 +43,17 @@ internal object EdgeRouter {
         for (union in graph.unions) {
             routeUnion(union, graph, nodes, waypoints, brackets)?.let(::add)
         }
-        // Both parents of a shared child map to the same couple path, so it is emitted once -
-        // drawing it per parent stacked two identical lines on top of each other, which renders
-        // visibly darker than its neighbours wherever edges are drawn semi-transparent (see
-        // TreeRenderer's MUTED_ALPHA) and doubles the work for no visual gain.
-        val drawnBrackets = mutableSetOf<Pair<List<Point>, EdgeStyle>>()
         for (edge in graph.edges) {
             if (edge is LayoutEdge.Parentage) {
                 val bracket = brackets[edge.parent to edge.child]
                 if (bracket != null) {
-                    // Keyed by style too, so a couple where one parent is adoptive still draws its
-                    // dashed line alongside the biological one instead of being deduplicated away.
-                    val style = if (edge.biological) EdgeStyle.BIOLOGICAL else EdgeStyle.NON_BIOLOGICAL
-                    if (drawnBrackets.add(bracket to style)) {
-                        add(EdgePath(edge = edge, segments = bracket, style = style))
-                    }
+                    add(
+                        EdgePath(
+                            edge = edge,
+                            segments = bracket,
+                            style = if (edge.biological) EdgeStyle.BIOLOGICAL else EdgeStyle.NON_BIOLOGICAL,
+                        ),
+                    )
                 } else {
                     val chain = waypoints[edge.parent to edge.child].orEmpty()
                     routeParentage(edge, graph, nodes, chain)?.let(::add)
@@ -70,32 +85,23 @@ internal object EdgeRouter {
         }
 
         val parentsBottom = maxOf(first.bottom, second.bottom)
-        // Each parent's line drops from its own card to the bus and then runs to the couple's
-        // joining point, from where a single shared run continues to the child. Previously every
-        // parent's bus ran all the way to the CHILD's center, so whenever the couple sat off to one
-        // side of the child both buses covered the same span and the shorter lay entirely on top of
-        // the longer - confirmed against a real family tree, two connectors overlapping for 424px
-        // and reading as one thick line. Stopping each parent's bus at the joining point keeps the
-        // line visibly tied to both parents while the overlapping span collapses to a single run.
-        val joinX = (first.centerX + second.centerX) / 2.0
         for ((childId, childRect) in sharedChildren) {
             // The bus sits close under the parents rather than at the midpoint of the gap, so it
             // reads as a tight bracket hanging off the couple instead of a line that sags toward
             // the middle of open space - independent of how far away the next generation happens
             // to be.
-            val busY = parentsBottom + (childRect.top - parentsBottom) * BUS_OFFSET_RATIO
+            val busY = busBetween(parentsBottom, childRect.top)
             for ((parentId, parentRect) in listOf(union.first to first, union.second to second)) {
                 val chain = waypoints[parentId to childId].orEmpty()
                 val segments = if (chain.isEmpty()) {
-                    buildList {
-                        add(Point(parentRect.centerX, parentRect.bottom))
-                        add(Point(parentRect.centerX, busY))
-                        add(Point(joinX, busY))
-                        // The descent to the child leaves from the joining point, shared by both
-                        // parents, so only one line spans the gap down to the child's row.
-                        if (childRect.centerX != joinX) add(Point(childRect.centerX, busY))
-                        add(childRect.topCenter)
-                    }
+                    // Both parents share the same bus height and the same final drop into the
+                    // child, so the bracket reads as one shape tied to each parent's own card.
+                    listOf(
+                        Point(parentRect.centerX, parentRect.bottom),
+                        Point(parentRect.centerX, busY),
+                        Point(childRect.centerX, busY),
+                        childRect.topCenter,
+                    )
                 } else {
                     buildList {
                         add(Point(parentRect.centerX, parentRect.bottom))
@@ -109,7 +115,7 @@ internal object EdgeRouter {
                         add(childRect.topCenter)
                     }
                 }
-                brackets[parentId to childId] = segments
+                brackets[parentId to childId] = segments.map { it.snapped() }
             }
         }
         return null
@@ -131,7 +137,7 @@ internal object EdgeRouter {
         // edge spans more than one generation, it bends through each intermediate waypoint instead
         // of jumping straight to the child's row.
         val segments = if (waypoints.isEmpty()) {
-            val busY = parentBottom + (child.top - parentBottom) * BUS_OFFSET_RATIO
+            val busY = busBetween(parentBottom, child.top)
             listOf(
                 Point(parent.centerX, parent.bottom),
                 Point(parent.centerX, busY),
@@ -153,7 +159,7 @@ internal object EdgeRouter {
         }
         return EdgePath(
             edge = edge,
-            segments = segments,
+            segments = segments.map { it.snapped() },
             style = if (edge.biological) EdgeStyle.BIOLOGICAL else EdgeStyle.NON_BIOLOGICAL,
         )
     }
