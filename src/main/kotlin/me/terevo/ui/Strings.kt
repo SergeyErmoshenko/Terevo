@@ -97,6 +97,11 @@ object Strings {
     const val KEEP_EDITING: String = "Продолжить редактирование"
     const val EDIT_PERSON: String = "Изменить"
     const val DELETE_PERSON: String = "Удалить"
+    const val DELETE_PERSON_TITLE: String = "Удалить человека?"
+
+    fun deletePersonMessage(name: String): String =
+        "$name будет удалён из дерева вместе со всеми его связями. Действие можно отменить через «Правка → Отменить»."
+
     const val VIEW_PERSON: String = "Просмотреть"
     const val ADD_PARENT: String = "Добавить родителя"
     const val ADD_CHILD: String = "Добавить ребёнка"

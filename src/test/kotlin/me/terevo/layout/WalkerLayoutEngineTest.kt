@@ -370,6 +370,58 @@ class WalkerLayoutEngineTest {
     }
 
     @Test
+    fun `a growing sibling block stays centered under its parent instead of creeping sideways`() {
+        // Straightening an only child onto its own parents must carry down to that child's own
+        // children. Moving the parent alone left its children where they were, so the whole sibling
+        // block appeared to drift further off-center with every child added - measured as -16px at
+        // two children, -44px at three and -65px at four, which is what made the tree look like it
+        // refused to make room when a person was added.
+        // Mirrors the reported tree: the parent's siblings carry spouses, so their row is crowded,
+        // and a separate in-law branch occupies one side. Both are needed - with a bare sibling row
+        // there is enough slack that the drift never shows up.
+        val kids = (1..4).map { "kid$it" }
+        val nodes = listOf(
+            "grandpa", "grandma",
+            "maksim", "aleksandr", "stepan", "ekaterina", "ivan", "annaN",
+            "andrey",
+            "inlawA", "inlawB", "inlawC",
+        ) + kids
+        val fixedEdges = listOf(
+            union("grandpa", "grandma"),
+            parentage("grandpa", "maksim"), parentage("grandma", "maksim"),
+            parentage("grandpa", "aleksandr"), parentage("grandma", "aleksandr"),
+            parentage("grandpa", "stepan"), parentage("grandma", "stepan"),
+            parentage("grandpa", "ivan"), parentage("grandma", "ivan"),
+            union("stepan", "ekaterina"),
+            union("ivan", "annaN"),
+            parentage("maksim", "andrey"),
+            union("inlawA", "inlawB"),
+            parentage("inlawA", "inlawC"), parentage("inlawB", "inlawC"),
+        )
+
+        for (kidCount in 1..4) {
+            val graph = graphOf(
+                nodes = nodes,
+                edges = fixedEdges + kids.take(kidCount).map { parentage("andrey", it) },
+            )
+            val layout = engine.layout(LayoutRequest(graph, metrics))
+
+            val parentCenter = layout.rectOf(nodeId("andrey"))!!.centerX
+            val rects = kids.take(kidCount).map { layout.rectOf(nodeId(it))!! }
+            val blockCenter = (rects.minOf { it.left } + rects.maxOf { it.right }) / 2.0
+            val offset = kotlin.math.abs(blockCenter - parentCenter)
+
+            // Relaxation leaves a small residual offset (~13px here); the defect drove it to 65px.
+            assertTrue(
+                offset <= 24.0,
+                "with $kidCount children the block sits ${offset}px off its parent " +
+                    "(block $blockCenter vs parent $parentCenter)",
+            )
+            assertNoOverlaps(layout)
+        }
+    }
+
+    @Test
     fun `an only child lines up exactly under its parents so the connector is straight`() {
         // Relaxation averages every neighbor a group has, so a child also pulled on by its own
         // descendants settles NEAR but not exactly on its parents' midpoint. The few pixels left

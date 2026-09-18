@@ -236,6 +236,34 @@ class AppControllerTest {
     }
 
     @Test
+    fun `deleting a person by id works without them being selected`() {
+        // The tree's context menu opens on right-click without selecting the card, so deletion has
+        // to work from an explicit id rather than from the current selection.
+        controller.create(locationOf("delete-by-id"))
+        val kept = createPerson("Иванов", "Иван")
+        val removed = createPerson("Петров", "Пётр")
+        controller.selectPerson(kept)
+
+        val state = controller.deletePerson(removed)
+
+        assertEquals(1, state.personCount)
+        // Deleting someone else must not disturb the current selection.
+        assertEquals(kept, state.selectedPerson?.id)
+    }
+
+    @Test
+    fun `deleting the selected person by id clears the selection`() {
+        controller.create(locationOf("delete-selected-by-id"))
+        val person = createPerson("Иванов", "Иван")
+        controller.selectPerson(person)
+
+        val state = controller.deletePerson(person)
+
+        assertNull(state.selectedPerson)
+        assertEquals(0, state.personCount)
+    }
+
+    @Test
     fun `search results are exposed and highlighted on canvas`() {
         controller.create(locationOf("search"))
         val expected = createPerson("Иванов", "Иван")
@@ -381,6 +409,55 @@ class AppControllerTest {
         )
         assertEquals(first, controller.navigateBack().selectedPerson?.id)
         assertEquals(second, controller.navigateForward().selectedPerson?.id)
+    }
+
+    @Test
+    fun `adding a child keeps the camera put so the tree visibly makes room`() {
+        // Reported as "the tree did not move right after adding a person". The layout itself was
+        // correct - the neighbouring branch really did shift - but remapping re-fitted the camera to
+        // the new, wider bounds on every edit, zooming out by almost exactly the factor the tree had
+        // grown. The two cancelled out, so the view looked frozen while every card got smaller and
+        // started to read as cramped/overlapping. The camera must survive an edit untouched.
+        controller.create(locationOf("camera-stays"))
+        val parent = createPerson("Иванов", "Иван")
+        controller.updateCanvas(me.terevo.ui.tree.TreeCanvasIntent.Resize(me.terevo.layout.Size(800.0, 600.0)))
+        controller.selectPerson(parent)
+
+        // Zoom is the part that was cancelling out the layout's growth, so it must not change at
+        // all. Vertical panning is left out of this assertion on purpose: selecting the parent
+        // re-centers on it, and a first child adds a whole generation below, which legitimately
+        // moves the view down. What must never happen is the scale shrinking to swallow the new
+        // width, or the tree being re-anchored horizontally so the widening is invisible.
+        val before = controller.state.canvas.camera
+        addChild(parent, "Иванов", "Пётр")
+        val widthAfterFirst = controller.state.canvas.layout.bounds.width
+
+        assertEquals(before.scale, controller.state.canvas.camera.scale, "zoom must survive an edit")
+        assertEquals(before.offset.x, controller.state.canvas.camera.offset.x)
+
+        // A second child genuinely widens the tree; the camera still must not compensate for it.
+        addChild(parent, "Иванов", "Сергей")
+
+        assertEquals(before.scale, controller.state.canvas.camera.scale)
+        assertEquals(before.offset.x, controller.state.canvas.camera.offset.x)
+        assertTrue(
+            controller.state.canvas.layout.bounds.width > widthAfterFirst,
+            "the second child must actually widen the tree, otherwise this proves nothing",
+        )
+        assertEquals(2, controller.state.selectedChildren.size)
+    }
+
+    @Test
+    fun `fit to screen still rescales on request`() {
+        controller.create(locationOf("explicit-fit"))
+        val parent = createPerson("Иванов", "Иван")
+        controller.updateCanvas(me.terevo.ui.tree.TreeCanvasIntent.Resize(me.terevo.layout.Size(800.0, 600.0)))
+        controller.selectPerson(parent)
+        repeat(3) { index -> addChild(parent, "Иванов", "Ребёнок$index") }
+
+        val canvas = controller.updateCanvas(me.terevo.ui.tree.TreeCanvasIntent.FitToScreen).canvas
+
+        assertEquals(canvas.camera.fit(canvas.layout.bounds, canvas.viewport, 32.0), canvas.camera)
     }
 
     @Test
@@ -611,6 +688,21 @@ class AppControllerTest {
 
     private fun createPerson(surname: String, givenName: String): me.terevo.domain.model.PersonId {
         val form = assertNotNull(controller.startAddingPerson().personForm)
+        controller.updatePersonForm(form.copy(surname = surname, givenName = givenName))
+        controller.savePerson()
+        return form.id
+    }
+
+    // Mirrors the context-menu flow the tree canvas uses: open the child relation dialog on the
+    // selected person, create a brand-new relative from it, then save.
+    private fun addChild(
+        parent: me.terevo.domain.model.PersonId,
+        surname: String,
+        givenName: String,
+    ): me.terevo.domain.model.PersonId {
+        controller.selectPerson(parent)
+        assertNotNull(controller.startAddingRelation(RelationMode.CHILD).relationDialog)
+        val form = assertNotNull(controller.startCreatingRelative().personForm)
         controller.updatePersonForm(form.copy(surname = surname, givenName = givenName))
         controller.savePerson()
         return form.id

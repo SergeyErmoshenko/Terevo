@@ -50,20 +50,25 @@ class CachedLayoutEngine(
         if (removed.size + added.size > MAX_INCREMENTAL_EDGE_CHANGES) return null
 
         val affected = changedNodes(removed + added)
+        // No node changed generation or lineage, so only sizes can differ - x stays valid.
         if (affected.isEmpty()) return resize(cached.layout, request)
-        val generations = incrementalGenerations(cached.layout.generations, request.graph, added)
-        val generationHeight = request.metrics.defaultSize.height
-        val nodes = cached.layout.nodes.mapValues { (id, rect) ->
-            val size = request.metrics.sizeOf(id)
-            val top = generations.getValue(id) * (generationHeight + request.options.generationSpacing)
-            Rect(rect.left, top, size.width, size.height)
-        }
-        return Layout(
-            nodes = nodes,
-            edges = EdgeRouter.route(request.graph, nodes),
-            generations = generations,
-            bounds = Rect.enclosing(nodes.values),
-        )
+
+        // Adding or removing a relation re-parents nodes, and horizontal placement is derived
+        // entirely from lineage: which cluster a node belongs to, its order within its row, and
+        // whose center it must sit above. Reusing the cached x here (only recomputing y from the
+        // new generations) left a node wherever it happened to sit BEFORE it had that relation -
+        // measured: attaching a child to its parent left the child 408px to the side, at x=1408
+        // while its parent sat at x=1000, where a full relayout puts both at x=200. Nothing in the
+        // incremental path can recover that, because it never consults the ordering or coordinate
+        // passes that decide x in the first place.
+        //
+        // Structural changes are also exactly the case a user is watching for - they just added
+        // someone and expect the tree to open up and make room - so this returns null and lets the
+        // caller run the full layout. A full pass measures ~50ms at 100 people and ~250ms at 1000,
+        // which is affordable for a one-off edit. The incremental path is kept for the genuinely
+        // cheap cases above: identical graphs and metric-only changes, which is what keeps typing
+        // in the name field responsive.
+        return null
     }
 
     private fun changedNodes(edges: Collection<LayoutEdge>): Set<NodeId> = buildSet {
@@ -79,42 +84,6 @@ class CachedLayoutEngine(
                 }
             }
         }
-    }
-
-    private fun incrementalGenerations(
-        previous: Map<NodeId, Int>,
-        graph: TreeGraph,
-        added: Set<LayoutEdge>,
-    ): Map<NodeId, Int> {
-        val generations = previous.toMutableMap()
-        val queue = ArrayDeque<NodeId>()
-        for (edge in added) {
-            when (edge) {
-                is LayoutEdge.Parentage -> {
-                    val childGeneration = generations.getValue(edge.child)
-                    if (graph.parents(edge.parent).isEmpty() && generations.getValue(edge.parent) >= childGeneration) {
-                        generations[edge.parent] = childGeneration - 1
-                    }
-                    queue.addLast(edge.child)
-                }
-                is LayoutEdge.Union -> {
-                    val generation = minOf(generations.getValue(edge.first), generations.getValue(edge.second))
-                    generations[edge.first] = generation
-                    generations[edge.second] = generation
-                }
-            }
-        }
-        val visited = mutableSetOf<NodeId>()
-        while (queue.isNotEmpty()) {
-            val current = queue.removeFirst()
-            val parentGeneration = graph.parents(current).maxOfOrNull(generations::getValue) ?: generations.getValue(current)
-            val next = if (graph.parents(current).isEmpty()) generations.getValue(current) else parentGeneration + 1
-            if (generations[current] != next) generations[current] = next
-            if (visited.add(current)) graph.children(current).forEach(queue::addLast)
-        }
-        val minimum = generations.values.minOrNull() ?: 0
-        if (minimum < 0) generations.replaceAll { _, generation -> generation - minimum }
-        return generations
     }
 
     private data class CacheEntry(

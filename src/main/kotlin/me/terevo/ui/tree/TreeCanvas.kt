@@ -10,9 +10,12 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -24,6 +27,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.DpOffset
+import me.terevo.domain.model.Person
 import me.terevo.domain.model.PersonId
 import me.terevo.layout.NodeId
 import me.terevo.layout.Point
@@ -40,6 +44,7 @@ fun TreeCanvas(
     state: TreeCanvasState,
     onIntent: (TreeCanvasIntent) -> Unit,
     onViewPerson: (PersonId) -> Unit = {},
+    onDeletePerson: (PersonId) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val textMeasurer = rememberTextMeasurer()
@@ -48,6 +53,7 @@ fun TreeCanvas(
     val density = LocalDensity.current.density
     val latestState = rememberUpdatedState(state)
     var contextMenu by remember { mutableStateOf<PersonContextMenu?>(null) }
+    var pendingDeletion by remember { mutableStateOf<Person?>(null) }
     val animatedCamera = remember { Animatable(state.camera, CameraVectorConverter) }
     LaunchedEffect(state.camera) {
         if (state.camera.scale != animatedCamera.value.scale) {
@@ -180,7 +186,37 @@ fun TreeCanvas(
                         contextMenu = null
                     },
                 )
+                HorizontalDivider()
+                DropdownMenuItem(
+                    text = { Text(Strings.DELETE_PERSON, color = colors.error) },
+                    onClick = {
+                        // Deleting also drops every relation the person took part in, so it asks
+                        // for confirmation rather than acting on a single menu click.
+                        pendingDeletion = menuPerson
+                        contextMenu = null
+                    },
+                )
             }
+        }
+        pendingDeletion?.let { person ->
+            AlertDialog(
+                onDismissRequest = { pendingDeletion = null },
+                title = { Text(Strings.DELETE_PERSON_TITLE) },
+                text = { Text(Strings.deletePersonMessage(person.name.display)) },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            onDeletePerson(person.id)
+                            pendingDeletion = null
+                        },
+                    ) {
+                        Text(Strings.DELETE_PERSON, color = colors.error)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingDeletion = null }) { Text(Strings.CANCEL) }
+                },
+            )
         }
     }
 }

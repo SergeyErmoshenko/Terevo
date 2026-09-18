@@ -193,6 +193,10 @@ sealed interface AppAction {
     data object AddPerson : AppAction
     data object EditPerson : AppAction
     data object DeletePerson : AppAction
+
+    // Carries the id explicitly because the tree's context menu opens on right-click without
+    // selecting the card, so there is no "selected person" to act on.
+    data class DeletePersonById(val id: me.terevo.domain.model.PersonId) : AppAction
     data object AddParent : AppAction
     data object AddChild : AppAction
     data object AddSpouse : AppAction
@@ -584,6 +588,7 @@ private fun MainTreeTab(state: AppState, onAction: (AppAction) -> Unit) {
                         state = state.canvas,
                         onIntent = { onAction(AppAction.Canvas(it)) },
                         onViewPerson = { onAction(AppAction.ViewPerson(it)) },
+                        onDeletePerson = { onAction(AppAction.DeletePersonById(it)) },
                     )
                     FloatingActionButton(
                         onClick = { onAction(AppAction.FitToScreen) },

@@ -92,14 +92,19 @@ class AppController(
         return state
     }
 
-    fun deleteSelectedPerson(): AppState {
-        val person = state.selectedPerson ?: return state
+    fun deleteSelectedPerson(): AppState = deletePerson(state.selectedPerson?.id ?: return state)
+
+    fun deletePerson(id: PersonId): AppState {
         val opened = project ?: return state
         val bus = commandBus ?: return state
+        val person = bus.tree.value.person(id) ?: return state
         state = when (PersonFormService(bus).delete(PersonFormState.fromPerson(person))) {
             is Outcome.Ok -> {
                 person.mediaIds.forEach(opened.mediaRepository::deleteIfUnused)
-                remapTree(bus.tree.value, selected = null).copy(status = "Человек удалён")
+                // Selection is only cleared when the deleted person was the one selected; deleting
+                // some other card from its context menu must not move the view.
+                val stillSelected = state.selectedPerson?.id?.takeIf { it != id }
+                remapTree(bus.tree.value, selected = stillSelected).copy(status = "Человек удалён")
             }
 
             is Outcome.Err -> state.copy(status = "Не удалось удалить человека")
@@ -762,13 +767,14 @@ class AppController(
             direction = state.layoutDirection,
         )
         val mediaRepository = project?.mediaRepository ?: me.terevo.domain.port.MediaRepository.NONE
-        val mapped =
-            TreeCanvasMapper.map(tree, options, mediaRepository).copy(viewport = state.canvas.viewport)
-        return if (mapped.viewport.width > 0.0 && mapped.viewport.height > 0.0 && mapped.layout.nodes.isNotEmpty()) {
-            reduceTreeCanvas(mapped, TreeCanvasIntent.FitToScreen)
-        } else {
-            mapped
-        }
+        // The camera is deliberately carried over untouched. Re-fitting here rescaled the view to
+        // the new bounds on every edit, which exactly cancelled out the layout's own growth: adding
+        // a person widened the tree and the camera immediately zoomed out by the same factor, so
+        // the branch that genuinely did move right appeared frozen in place while every card got
+        // slightly smaller and looked cramped. Fitting is now only done where the user asks for it
+        // (the FitToScreen action) or on the first viewport measurement (TreeCanvasIntent.Resize).
+        return TreeCanvasMapper.map(tree, options, mediaRepository)
+            .copy(viewport = state.canvas.viewport, camera = state.canvas.camera)
     }
 
     @OptIn(ExperimentalTime::class)

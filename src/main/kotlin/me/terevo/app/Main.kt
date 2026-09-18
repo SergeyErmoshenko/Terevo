@@ -107,6 +107,7 @@ fun main() = application {
                 AppAction.AddPerson -> appState = controller.startAddingPerson()
                 AppAction.EditPerson -> appState = controller.startEditingPerson()
                 AppAction.DeletePerson -> appState = controller.deleteSelectedPerson()
+                is AppAction.DeletePersonById -> appState = controller.deletePerson(action.id)
                 AppAction.AddParent -> appState = controller.startAddingRelation(RelationMode.PARENT)
                 AppAction.AddChild -> appState = controller.startAddingRelation(RelationMode.CHILD)
                 AppAction.AddSpouse -> appState = controller.startAddingRelation(RelationMode.SPOUSE)

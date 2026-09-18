@@ -131,13 +131,27 @@ private fun DrawScope.drawPerson(
         size = Size(GENDER_STRIPE_WIDTH, size.height)
     )
     when (accent) {
-        NodeAccent.FOCUSED -> drawRoundRect(
-            color = colors.selection,
-            topLeft = topLeft,
-            size = size,
-            cornerRadius = cornerRadius,
-            style = Stroke(FOCUSED_WIDTH),
-        )
+        // The focused card is the one the whole view is oriented around, so it gets a soft halo
+        // outside the card in addition to its border. A single thin stroke was easy to lose track
+        // of once a tree filled the screen, especially next to the RELATED cards which carry a
+        // stroke in the same colour.
+        NodeAccent.FOCUSED -> {
+            val halo = FOCUSED_HALO_WIDTH
+            drawRoundRect(
+                color = colors.selection.copy(alpha = FOCUSED_HALO_ALPHA),
+                topLeft = topLeft - Offset(halo / 2f, halo / 2f),
+                size = Size(size.width + halo, size.height + halo),
+                cornerRadius = CornerRadius(cornerRadius.x + halo / 2f, cornerRadius.y + halo / 2f),
+                style = Stroke(halo),
+            )
+            drawRoundRect(
+                color = colors.selection,
+                topLeft = topLeft,
+                size = size,
+                cornerRadius = cornerRadius,
+                style = Stroke(FOCUSED_WIDTH),
+            )
+        }
 
         NodeAccent.RELATED -> drawRoundRect(
             color = colors.selection.copy(alpha = RELATED_ALPHA),
@@ -256,7 +270,11 @@ private fun Point.toOffset(): Offset = Offset(x.toFloat(), y.toFloat())
 
 private const val DETAILS_SCALE: Double = 0.3
 private const val EDGE_WIDTH: Float = 2f
-private const val FOCUSED_WIDTH: Float = 3f
+private const val FOCUSED_WIDTH: Float = 5f
+
+// Soft ring drawn just outside the focused card, so the main person stays findable in a full tree.
+private const val FOCUSED_HALO_WIDTH: Float = 10f
+private const val FOCUSED_HALO_ALPHA: Float = 0.3f
 private const val RELATED_WIDTH: Float = 2f
 private const val RELATED_ALPHA: Float = 0.7f
 private const val MUTED_ALPHA: Float = 0.3f

@@ -176,7 +176,9 @@ internal object CoordinateAssignment {
             for (group in row) centers[group] = resolved.getValue(group)
         }
 
-        straightenSingleChildren(generations, canonicalOrder, centers, widths, groupOf, nodeParentsOf, ::gapBetween)
+        straightenSingleChildren(
+            generations, canonicalOrder, centers, widths, groupOf, nodeParentsOf, nodeChildrenOf, ::gapBetween,
+        )
 
         return centers
     }
@@ -193,8 +195,10 @@ internal object CoordinateAssignment {
     //
     // Only the slack already present is consumed - each group may move at most up to its
     // neighbours' required gaps, so no spacing floor is ever broken and a row that is genuinely
-    // packed keeps its step. Later rows see earlier rows' adjusted positions, so a straightened
-    // parent lets its own child straighten onto the same line rather than chasing a stale target.
+    // packed keeps its step. Any shift is inherited by the group's descendants: moving an only
+    // child without moving the children hanging below it just relocates the kink to the next
+    // generation and makes a growing sibling block appear to creep sideways (-65px after four
+    // children in the reported case).
     private fun straightenSingleChildren(
         generations: List<Int>,
         order: Map<Int, List<Group>>,
@@ -202,16 +206,52 @@ internal object CoordinateAssignment {
         widths: Map<Group, Double>,
         groupOf: Map<NodeId, Group>,
         nodeParentsOf: Map<NodeId, List<NodeId>>,
+        nodeChildrenOf: Map<NodeId, List<NodeId>>,
         gapBetween: (Group, Group) -> Double,
     ) {
+        val inheritedShift = mutableMapOf<Group, Double>()
         for (generation in generations) {
             val row = order.getValue(generation)
+
+            // Carry prior straightening down before deciding whether this row has further slack.
+            // Siblings inherit the same parent delta, so their whole block moves rigidly instead of
+            // drifting relative to the parent as more children are added.
+            for (group in row) {
+                val parentGroups = group.nodes
+                    .flatMap { nodeParentsOf[it].orEmpty() }
+                    .mapNotNull { groupOf[it] }
+                    .distinct()
+                val inherited = parentGroups.mapNotNull(inheritedShift::get).distinct()
+                if (inherited.size == 1) {
+                    centers[group] = centers.getValue(group) + inherited.single()
+                    inheritedShift[group] = inherited.single()
+                }
+            }
+
+            // Moving a whole inherited block can consume row slack, so re-resolve once before the
+            // local straightening below. This keeps the no-overlap guarantee intact.
+            val resolved = resolveOverlaps(row, centers, widths, gapBetween)
+            for (group in row) centers[group] = resolved.getValue(group)
+
             for ((index, group) in row.withIndex()) {
                 val parentGroups = group.nodes
                     .flatMap { nodeParentsOf[it].orEmpty() }
                     .mapNotNull { groupOf[it] }
                     .distinct()
                 if (parentGroups.isEmpty()) continue
+
+                // Only an ONLY child belongs on its parents' center. Siblings belong distributed
+                // AROUND that center, so pulling each of them onto it individually is wrong - and
+                // because the row is walked left to right, the squeeze is applied unevenly and the
+                // whole sibling block creeps sideways. Measured: a block of children drifted
+                // further left of its parent with every child added (-16px at two, -44px at three,
+                // -65px at four). Relaxation already centers a sibling block correctly, so groups
+                // with siblings are left alone here.
+                val siblingGroups = parentGroups
+                    .flatMap { parent -> parent.nodes.flatMap { nodeChildrenOf[it].orEmpty() } }
+                    .mapNotNull { groupOf[it] }
+                    .distinct()
+                if (siblingGroups.size > 1) continue
 
                 // Where the parents actually are now, which is the line worth lining up with.
                 val target = parentGroups.map(centers::getValue).average()
@@ -239,7 +279,9 @@ internal object CoordinateAssignment {
                 }
                 if (room <= CONVERGENCE_THRESHOLD) continue
 
-                centers[group] = current + delta.coerceIn(-room, room)
+                val applied = delta.coerceIn(-room, room)
+                centers[group] = current + applied
+                inheritedShift[group] = (inheritedShift[group] ?: 0.0) + applied
             }
         }
     }
