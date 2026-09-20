@@ -1,5 +1,9 @@
 package me.terevo.layout
 
+import kotlin.math.abs
+
+private const val STRAIGHTEN_EPSILON: Double = 0.5
+
 internal data class Group(
     val nodes: List<NodeId>,
     val order: String,
@@ -261,15 +265,11 @@ class WalkerLayoutEngine : LayoutEngine {
                         .mapNotNull(centers::get)
                     if (parentCenters.isEmpty()) null else parentCenters.average() - groupCenter
                 }
-                if (pull.values.all { it == null }) {
-                    group.nodes
-                } else {
-                    group.nodes.sortedBy { pull[it] ?: 0.0 }
-                }
+                orderedKeepingMarriedPartnersAdjacent(group, graph, pull)
             }
         }
 
-        val nodes = buildMap {
+        val placedNodes = buildMap {
             for (group in realGroups) {
                 val groupWidth = widths.getValue(group)
                 var left = centers.getValue(group) - groupWidth / 2.0
@@ -281,6 +281,11 @@ class WalkerLayoutEngine : LayoutEngine {
             }
         }
 
+        val nodes = straightenLineageTops(
+            placedNodes, realGroups, orientedMembers, centers, groupByNode,
+            nodeParentsOf, nodeChildrenOf, options, cluster,
+        )
+
         val waypoints = dummyChains.mapValues { (_, chain) ->
             chain.map { dummy ->
                 Point(
@@ -291,6 +296,120 @@ class WalkerLayoutEngine : LayoutEngine {
         }
 
         return PlacedComponent(nodes, waypoints, component.minOf(graph::orderOf))
+    }
+
+    private fun straightenLineageTops(
+        placed: Map<NodeId, Rect>,
+        realGroups: List<Group>,
+        orientedMembers: Map<Group, List<NodeId>>,
+        centers: Map<Group, Double>,
+        groupByNode: Map<NodeId, Group>,
+        nodeParentsOf: Map<NodeId, List<NodeId>>,
+        nodeChildrenOf: Map<NodeId, List<NodeId>>,
+        options: LayoutOptions,
+        cluster: Map<Group, Group>,
+    ): Map<NodeId, Rect> {
+        val moved = placed.toMutableMap()
+
+        fun requiredGap(left: Group, right: Group): Double =
+            if ((cluster[left] ?: left) == (cluster[right] ?: right)) {
+                options.siblingSpacing
+            } else {
+                options.siblingSpacing + options.clusterSpacing
+            }
+
+        fun currentLeftEdge(group: Group): Double =
+            orientedMembers.getValue(group).minOf { moved.getValue(it).left }
+
+        fun currentRightEdge(group: Group): Double =
+            orientedMembers.getValue(group).maxOf { moved.getValue(it).right }
+
+        fun onlyChildOf(group: Group): NodeId? {
+            val children = group.nodes.flatMap { nodeChildrenOf[it].orEmpty() }.distinct()
+            val child = children.singleOrNull() ?: return null
+            if (nodeParentsOf[child].orEmpty().size > 1) return null
+            if (groupByNode[child] == group) return null
+            return child.takeIf { it in moved }
+        }
+
+        fun isLineageTop(group: Group): Boolean =
+            group.nodes.none { nodeParentsOf[it].orEmpty().isNotEmpty() }
+
+        fun freeSpaceToward(row: List<Group>, index: Int, group: Group, towardRight: Boolean): Double {
+            val neighbour = row.getOrNull(if (towardRight) index + 1 else index - 1)
+                ?: return Double.POSITIVE_INFINITY
+            return if (towardRight) {
+                currentLeftEdge(neighbour) - currentRightEdge(group) - requiredGap(group, neighbour)
+            } else {
+                currentLeftEdge(group) - currentRightEdge(neighbour) - requiredGap(neighbour, group)
+            }
+        }
+
+        fun slide(group: Group, by: Double) {
+            for (id in orientedMembers.getValue(group)) {
+                val rect = moved[id] ?: continue
+                moved[id] = Rect(rect.left + by, rect.top, rect.width, rect.height)
+            }
+        }
+
+        val rowsByTop = realGroups
+            .filter { group -> group.nodes.any { it in moved } }
+            .groupBy { group -> moved.getValue(group.nodes.first { it in moved }).top }
+
+        for ((_, groupsInRow) in rowsByTop) {
+            val row = groupsInRow.sortedBy { centers.getValue(it) }
+            for ((index, group) in row.withIndex()) {
+                if (!isLineageTop(group)) continue
+                val childId = onlyChildOf(group) ?: continue
+                val parentId = group.nodes.firstOrNull { childId in nodeChildrenOf[it].orEmpty() } ?: continue
+                val offsetToChild = moved.getValue(childId).centerX - moved.getValue(parentId).centerX
+                if (abs(offsetToChild) < STRAIGHTEN_EPSILON) continue
+
+                val room = freeSpaceToward(row, index, group, towardRight = offsetToChild > 0)
+                if (room <= STRAIGHTEN_EPSILON) continue
+                slide(group, offsetToChild.coerceIn(-room, room))
+            }
+        }
+        return moved
+    }
+
+    private fun marriageUnitsOf(group: Group, graph: TreeGraph): List<List<NodeId>> {
+        val unitRepresentative = group.nodes.associateWithTo(mutableMapOf()) { it }
+        fun representativeOf(node: NodeId): NodeId {
+            var current = node
+            while (unitRepresentative.getValue(current) != current) current = unitRepresentative.getValue(current)
+            return current
+        }
+        for (node in group.nodes) {
+            for (partner in graph.partners(node)) {
+                if (partner !in unitRepresentative) continue
+                val nodeUnit = representativeOf(node)
+                val partnerUnit = representativeOf(partner)
+                if (nodeUnit != partnerUnit) unitRepresentative[partnerUnit] = nodeUnit
+            }
+        }
+        return group.nodes.groupBy(::representativeOf).values.toList()
+    }
+
+    private fun orderedKeepingMarriedPartnersAdjacent(
+        group: Group,
+        graph: TreeGraph,
+        pull: Map<NodeId, Double?>,
+    ): List<NodeId> {
+        val existingPosition = group.nodes.withIndex().associate { (index, node) -> node to index }
+        fun averagePull(members: List<NodeId>): Double =
+            members.mapNotNull { pull[it] }.takeIf { it.isNotEmpty() }?.average() ?: 0.0
+
+        return marriageUnitsOf(group, graph)
+            .sortedWith(
+                compareBy(
+                    { averagePull(it) },
+                    { members -> members.minOf { existingPosition.getValue(it) } },
+                ),
+            )
+            .flatMap { members ->
+                members.sortedWith(compareBy({ pull[it] ?: 0.0 }, { existingPosition.getValue(it) }))
+            }
     }
 
     private fun spouseGroups(

@@ -163,21 +163,13 @@ internal object CoordinateAssignment {
         // left-right cluster order - so canonicalize it first.
         val canonicalOrder = canonicalizeClusterOrder(generations, order, cluster)
         compactClusters(
-            generations, canonicalOrder, centers, widths, groupOf, nodeParentsOf, cluster, ::gapBetween,
+            generations, canonicalOrder, centers, widths, groupOf, nodeParentsOf, nodeChildrenOf, metrics,
+            siblingSpacing, spouseSpacing, cluster, ::gapBetween,
         )
 
-        // One final safety pass over the offset-adjusted positions for same-cluster sibling
-        // overlap (e.g. a wide sub-branch's own row needing extra room from its own
-        // sibling) - a purely local correction now, since compactClusters already
-        // guarantees no cross-cluster overlap at any row.
-        for (generation in generations) {
-            val row = canonicalOrder.getValue(generation)
-            val resolved = resolveOverlaps(row, centers, widths, ::gapBetween)
-            for (group in row) centers[group] = resolved.getValue(group)
-        }
-
         straightenSingleChildren(
-            generations, canonicalOrder, centers, widths, groupOf, nodeParentsOf, nodeChildrenOf, ::gapBetween,
+            generations, canonicalOrder, centers, widths, groupOf, nodeParentsOf, nodeChildrenOf, metrics,
+            siblingSpacing, spouseSpacing, cluster, ::gapBetween,
         )
 
         return centers
@@ -207,9 +199,46 @@ internal object CoordinateAssignment {
         groupOf: Map<NodeId, Group>,
         nodeParentsOf: Map<NodeId, List<NodeId>>,
         nodeChildrenOf: Map<NodeId, List<NodeId>>,
+        metrics: NodeMetrics,
+        siblingSpacing: Double,
+        spouseSpacing: Double,
+        cluster: Map<Group, Group>,
         gapBetween: (Group, Group) -> Double,
     ) {
         val inheritedShift = mutableMapOf<Group, Double>()
+
+        // Bracket-reach overhang (see compactClusters) is only fenced off between DIFFERENT
+        // clusters there - two full siblings under the very same parents get no such protection,
+        // so a sibling with a wide subtree of its own can still be squeezed against its neighbor
+        // right here, in this row's own overlap correction. Confirmed against a real family tree:
+        // sibling "5"'s whole branch sat pressed up against its neighboring sibling's subtree one
+        // generation down, even though neither sibling's own card overlapped anything at their own
+        // row.
+        //
+        // Scoped to SAME-cluster pairs only - cross-cluster spacing is already reach-aware in
+        // compactClusters, which additionally balances the deficit a bridging couple absorbs
+        // between two lineages by averaging offsets computed from one pre-shift snapshot. Redoing
+        // that same reach check here, on top of compactClusters' result and using centers it has
+        // since shifted, double-applies the correction and reopens the very imbalance
+        // compactClusters' averaging exists to prevent (confirmed: two in-law couples that used to
+        // split a 520px unavoidable deficit ~260px each instead landed at 600px apiece once this
+        // ran unscoped on their row too).
+        //
+        // Only reserved when BOTH siblings actually have children of their own: a shallow sibling
+        // with no descendants has nothing to collide with, and deliberately tucks in at plain card
+        // width (see "a wide subtree tucks its shallow row close to a plain sibling instead of
+        // reserving its full width") - reserving room it will never use would just make every tree
+        // with any wide branch needlessly sprawl sideways.
+        fun hasChildren(group: Group): Boolean = group.nodes.any { nodeChildrenOf[it].orEmpty().isNotEmpty() }
+
+        fun reachAwareGap(left: Group, right: Group): Double =
+            if ((cluster[left] ?: left) == (cluster[right] ?: right) && hasChildren(left) && hasChildren(right)) {
+                rightReach(left, groupOf, nodeChildrenOf, centers, widths, metrics, spouseSpacing, siblingSpacing) +
+                    gapBetween(left, right) +
+                    leftReach(right, groupOf, nodeChildrenOf, centers, widths, metrics, spouseSpacing, siblingSpacing)
+            } else {
+                gapBetween(left, right)
+            }
         for (generation in generations) {
             val row = order.getValue(generation)
 
@@ -230,8 +259,24 @@ internal object CoordinateAssignment {
 
             // Moving a whole inherited block can consume row slack, so re-resolve once before the
             // local straightening below. This keeps the no-overlap guarantee intact.
-            val resolved = resolveOverlaps(row, centers, widths, gapBetween)
-            for (group in row) centers[group] = resolved.getValue(group)
+            //
+            // This is also the only place same-cluster sibling overlap gets resolved at all
+            // (compactClusters only guarantees no CROSS-cluster overlap) - so any push this
+            // produces must be carried down to descendants exactly like the only-child straighten
+            // below does, or a wide sibling row shoving its own parent group sideways to make room
+            // (e.g. many new children crowding a couple's row) leaves that couple's own child
+            // behind, unable to follow: the child's row has no slack of its own to close a gap this
+            // large, so the "only child" step below silently fails to catch up (confirmed against
+            // the reported bug: a bridging in-law couple's child sat 1300px off its parents after
+            // 15 unrelated siblings were added elsewhere in the row above).
+            val resolved = resolveOverlaps(row, centers, widths, ::reachAwareGap)
+            for (group in row) {
+                val delta = resolved.getValue(group) - centers.getValue(group)
+                centers[group] = resolved.getValue(group)
+                if (delta != 0.0) {
+                    inheritedShift[group] = (inheritedShift[group] ?: 0.0) + delta
+                }
+            }
 
             for ((index, group) in row.withIndex()) {
                 val parentGroups = group.nodes
@@ -350,6 +395,10 @@ internal object CoordinateAssignment {
         widths: Map<Group, Double>,
         groupOf: Map<NodeId, Group>,
         nodeParentsOf: Map<NodeId, List<NodeId>>,
+        nodeChildrenOf: Map<NodeId, List<NodeId>>,
+        metrics: NodeMetrics,
+        siblingSpacing: Double,
+        spouseSpacing: Double,
         cluster: Map<Group, Group>,
         gapBetween: (Group, Group) -> Double,
     ) {
@@ -366,7 +415,11 @@ internal object CoordinateAssignment {
                 val leftCluster = clusterOf(left)
                 val rightCluster = clusterOf(right)
                 if (leftCluster == rightCluster) continue
-                val requiredGap = widths.getValue(left) / 2.0 + gapBetween(left, right) + widths.getValue(right) / 2.0
+                val requiredGap = rightReach(
+                    left, groupOf, nodeChildrenOf, relaxed, widths, metrics, spouseSpacing, siblingSpacing,
+                ) +
+                    gapBetween(left, right) +
+                    leftReach(right, groupOf, nodeChildrenOf, relaxed, widths, metrics, spouseSpacing, siblingSpacing)
                 val weight = requiredGap - (relaxed.getValue(right) - relaxed.getValue(left))
                 val key = leftCluster to rightCluster
                 constraints[key] = maxOf(constraints[key] ?: Double.NEGATIVE_INFINITY, weight)
@@ -435,6 +488,106 @@ internal object CoordinateAssignment {
             centers[group] =
                 relaxed.getValue(group) + offset.getValue(clusterOf(group)) + (shift[group] ?: 0.0)
         }
+    }
+
+    // A parent's own card can be far narrower than the bracket EdgeRouter draws to its children:
+    // a single parent centered above nine children fans a bus bar out hundreds of pixels either
+    // side of its own card edges. Spacing neighbors by card width alone leaves that overhang free
+    // to swing into whatever sits next door - confirmed against a real family tree, where a single
+    // parent's nine-child bracket swung 837px past its own left edge and crossed straight through
+    // a neighboring, unrelated three-child family's own bracket one generation down (the two
+    // verticals passed through each other's horizontal bar at points nowhere near either party's
+    // own card). Widening the half-extent used for spacing to cover the farthest a group's own
+    // children reach - never narrowing it below the card's own half-width - reserves room for that
+    // overhang before it can collide with a neighbor. This applies just as much between two full
+    // siblings under the same parents as it does between two unrelated families: a sibling with a
+    // wide subtree of its own can be squeezed against its neighbor exactly the same way.
+    //
+    // Reach is measured to the actual CHILD NODE's own edge, not its group's - a child who married
+    // in is merged into a couple box together with an in-law spouse who is nobody's descendant
+    // here, and charging this parent for that spouse's half of the box as well would reserve space
+    // nothing actually needs.
+    private fun childEdge(
+        child: NodeId,
+        sign: Int,
+        groupOf: Map<NodeId, Group>,
+        centers: Map<Group, Double>,
+        widths: Map<Group, Double>,
+        metrics: NodeMetrics,
+        spouseSpacing: Double,
+    ): Double {
+        val childGroup = groupOf[child] ?: return Double.NaN
+        val center = centerOf(child, childGroup, centers, widths, metrics, spouseSpacing)
+        val half = if (childGroup.isDummy) 0.0 else metrics.sizeOf(child).width / 2.0
+        return center + sign * half
+    }
+
+    // A leaf child's ONLY neighbor is its own single parent, so the priority-method relaxation
+    // above pulls it to exactly that parent's x - the whole fan of children collapses onto one
+    // point before row-overlap-resolution has ever run for their generation, since that step only
+    // happens later, when the top-down walk actually reaches their row. Reach measured from these
+    // still-collapsed positions reads as near zero, wildly undercounting the spread
+    // resolveOverlaps is about to create - confirmed with a synthetic repro: eight childless
+    // grandchildren fanned out to +-780px once their own row was resolved, but the reach measured
+    // one generation up (while THIS row was being resolved) saw them still stacked on their
+    // parent's exact center and reserved almost no room, so a neighboring sibling's single child
+    // ended up shifted so far right to clear its own row's minimum spacing that its connector swept
+    // straight across that fan's individual drop lines. The total width the children will need once
+    // spread out - sum of their own widths plus the ordinary sibling gaps between them - is a floor
+    // that doesn't depend on relaxation having already run, and is used here alongside (not instead
+    // of) the position-based measurement, which still matters for a group whose children are pulled
+    // wider than their own combined width by deeper descendants.
+    private fun childrenSpreadHalfWidth(
+        group: Group,
+        groupOf: Map<NodeId, Group>,
+        nodeChildrenOf: Map<NodeId, List<NodeId>>,
+        widths: Map<Group, Double>,
+        siblingSpacing: Double,
+    ): Double {
+        val childGroups = group.nodes.flatMap { nodeChildrenOf[it].orEmpty() }
+            .mapNotNull(groupOf::get)
+            .distinct()
+        if (childGroups.size <= 1) return 0.0
+        val totalWidth = childGroups.sumOf { widths.getValue(it) } + (childGroups.size - 1) * siblingSpacing
+        return totalWidth / 2.0
+    }
+
+    private fun rightReach(
+        group: Group,
+        groupOf: Map<NodeId, Group>,
+        nodeChildrenOf: Map<NodeId, List<NodeId>>,
+        centers: Map<Group, Double>,
+        widths: Map<Group, Double>,
+        metrics: NodeMetrics,
+        spouseSpacing: Double,
+        siblingSpacing: Double,
+    ): Double {
+        val ownCenter = centers.getValue(group)
+        val childReach = group.nodes.flatMap { nodeChildrenOf[it].orEmpty() }
+            .distinct()
+            .maxOfOrNull { child -> childEdge(child, +1, groupOf, centers, widths, metrics, spouseSpacing) - ownCenter }
+            ?: 0.0
+        val spreadReach = childrenSpreadHalfWidth(group, groupOf, nodeChildrenOf, widths, siblingSpacing)
+        return maxOf(widths.getValue(group) / 2.0, childReach, spreadReach)
+    }
+
+    private fun leftReach(
+        group: Group,
+        groupOf: Map<NodeId, Group>,
+        nodeChildrenOf: Map<NodeId, List<NodeId>>,
+        centers: Map<Group, Double>,
+        widths: Map<Group, Double>,
+        metrics: NodeMetrics,
+        spouseSpacing: Double,
+        siblingSpacing: Double,
+    ): Double {
+        val ownCenter = centers.getValue(group)
+        val childReach = group.nodes.flatMap { nodeChildrenOf[it].orEmpty() }
+            .distinct()
+            .maxOfOrNull { child -> ownCenter - childEdge(child, -1, groupOf, centers, widths, metrics, spouseSpacing) }
+            ?: 0.0
+        val spreadReach = childrenSpreadHalfWidth(group, groupOf, nodeChildrenOf, widths, siblingSpacing)
+        return maxOf(widths.getValue(group) / 2.0, childReach, spreadReach)
     }
 
     // A dummy group has no real size and is never made of more than one node, so its center is

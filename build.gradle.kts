@@ -93,6 +93,7 @@ val sqliteNativeDir: File = layout.buildDirectory.dir("tmp/sqlite-native").get()
 
 tasks.test {
     useJUnitPlatform()
+    maxHeapSize = "2g"
     systemProperty("org.sqlite.tmpdir", sqliteNativeDir.absolutePath)
     systemProperty("java.awt.headless", "true")
     doFirst {
