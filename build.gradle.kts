@@ -1,6 +1,8 @@
 import org.gradle.internal.os.OperatingSystem
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.net.URI
+import java.security.MessageDigest
 
 plugins {
     alias(libs.plugins.kotlin.jvm)
@@ -11,7 +13,60 @@ plugins {
 }
 
 group = "me.terevo"
-version = "0.1.0"
+version = providers.gradleProperty("version").getOrElse("1.0.0")
+
+val graphvizVersion = "12.2.1"
+val graphvizWindowsUrl =
+    "https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/$graphvizVersion/" +
+        "windows_10_cmake_Release_Graphviz-$graphvizVersion-win64.zip"
+val graphvizWindowsSha256 = "82c34e6a73b8158bee357d1c51aac08925edc8f4a9f517f591fb8df989405ad4"
+
+fun sha256Of(file: File): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    file.inputStream().use { stream ->
+        val buffer = ByteArray(1 shl 16)
+        while (true) {
+            val read = stream.read(buffer)
+            if (read < 0) break
+            digest.update(buffer, 0, read)
+        }
+    }
+    return digest.digest().joinToString("") { "%02x".format(it) }
+}
+
+val graphvizWindowsZip = layout.buildDirectory.file("graphviz/Graphviz-$graphvizVersion-win64.zip")
+
+val downloadGraphvizWindows = tasks.register("downloadGraphvizWindows") {
+    description = "Downloads the Graphviz $graphvizVersion Windows zip from the official release."
+    outputs.file(graphvizWindowsZip)
+    onlyIf { OperatingSystem.current().isWindows }
+    doLast {
+        val dest = graphvizWindowsZip.get().asFile
+        dest.parentFile.mkdirs()
+        if (!dest.exists()) {
+            URI.create(graphvizWindowsUrl).toURL().openStream().use { input ->
+                dest.outputStream().use { output -> input.copyTo(output) }
+            }
+        }
+        val actual = sha256Of(dest)
+        check(actual == graphvizWindowsSha256) {
+            "Graphviz $graphvizVersion checksum mismatch: got $actual, expected $graphvizWindowsSha256"
+        }
+    }
+}
+
+val graphvizWindows = tasks.register<Sync>("graphvizWindows") {
+    description = "Unpacks the Graphviz windows build that ships inside the Terevo installer."
+    dependsOn(downloadGraphvizWindows)
+    onlyIf { OperatingSystem.current().isWindows }
+    into(layout.buildDirectory.dir("graphviz/windows"))
+    from(zipTree(graphvizWindowsZip)) {
+        include("Graphviz-*-win64/bin/**")
+        include("Graphviz-*-win64/share/doc/graphviz/COPYING")
+        eachFile { path = path.substringAfter("/") }
+        includeEmptyDirs = false
+    }
+}
 
 kotlin {
     jvmToolchain {
@@ -67,7 +122,9 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi)
             packageName = "Terevo"
-            packageVersion = "1.0.0"
+            packageVersion = version.toString()
+            modules("java.instrument", "java.naming", "java.sql", "jdk.unsupported")
+            appResourcesRootDir.set(rootProject.file("packaging/resources"))
             description = "Genealogy tree editor"
             vendor = "Terevo"
             fileAssociation(
@@ -77,6 +134,11 @@ compose.desktop {
             )
             windows {
                 iconFile.set(rootProject.file("packaging/icons/icon.ico"))
+                upgradeUuid = "5602797B-3D5F-4620-909A-B151F407894C"
+                menuGroup = "Terevo"
+                shortcut = true
+                dirChooser = true
+                perUserInstall = true
             }
             macOS {
                 iconFile.set(rootProject.file("packaging/icons/icon.icns"))
@@ -89,6 +151,17 @@ compose.desktop {
     }
 }
 
+afterEvaluate {
+    tasks.named<Sync>("prepareAppResources") {
+        if (OperatingSystem.current().isWindows) {
+            dependsOn(graphvizWindows)
+            from(graphvizWindows) {
+                into("graphviz")
+            }
+        }
+    }
+}
+
 val sqliteNativeDir: File = layout.buildDirectory.dir("tmp/sqlite-native").get().asFile
 
 tasks.test {
@@ -96,7 +169,9 @@ tasks.test {
     maxHeapSize = "2g"
     systemProperty("org.sqlite.tmpdir", sqliteNativeDir.absolutePath)
     systemProperty("java.awt.headless", "true")
+    systemProperty("java.io.tmpdir", layout.buildDirectory.dir("tmp/test").get().asFile.absolutePath)
     doFirst {
         sqliteNativeDir.mkdirs()
+        layout.buildDirectory.dir("tmp/test").get().asFile.mkdirs()
     }
 }
