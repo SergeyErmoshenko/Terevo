@@ -448,16 +448,23 @@ class AppControllerTest {
     }
 
     @Test
-    fun `fit to screen still rescales on request`() {
+    fun `fit to screen resets zoom and centers on the main person`() {
         controller.create(locationOf("explicit-fit"))
         val parent = createPerson("Иванов", "Иван")
         controller.updateCanvas(me.terevo.ui.tree.TreeCanvasIntent.Resize(me.terevo.layout.Size(800.0, 600.0)))
         controller.selectPerson(parent)
         repeat(3) { index -> addChild(parent, "Иванов", "Ребёнок$index") }
+        controller.updateCanvas(me.terevo.ui.tree.TreeCanvasIntent.Zoom(me.terevo.layout.Point(400.0, 300.0), 2.0))
 
         val canvas = controller.updateCanvas(me.terevo.ui.tree.TreeCanvasIntent.FitToScreen).canvas
+        val mainPersonRect = assertNotNull(canvas.layout.mainPersonId?.let(canvas.layout::rectOf))
 
-        assertEquals(canvas.camera.fit(canvas.layout.bounds, canvas.viewport, 32.0), canvas.camera)
+        assertEquals(
+            me.terevo.ui.tree.Camera(scale = me.terevo.ui.tree.Camera.DEFAULT_SCALE)
+                .center(mainPersonRect, canvas.viewport),
+            canvas.camera,
+        )
+        assertEquals(me.terevo.ui.tree.Camera.DEFAULT_SCALE, canvas.camera.scale, "zoom must reset to default")
     }
 
     @Test
@@ -577,6 +584,25 @@ class AppControllerTest {
 
         val tree = assertNotNull(controller.commandBus?.tree?.value)
         assertEquals(setOf(father, mother), tree.parentsOf(child).toSet())
+    }
+
+    @Test
+    fun `adding a child to someone with one spouse defaults the second parent to that spouse`() {
+        // Reported: a child added to a married woman was recorded with her as the only parent,
+        // because the second parent defaulted to "none", and was drawn off a separate line instead
+        // of the couple's shared bracket.
+        controller.create(locationOf("second-parent-default"))
+        val father = createPerson("Иванов", "Пётр")
+        val mother = createPerson("Иванова", "Мария")
+        controller.selectPerson(father)
+        val spouseDialog = assertNotNull(controller.startAddingRelation(RelationMode.SPOUSE).relationDialog)
+        controller.updateRelationDialog(spouseDialog.copy(selected = mother))
+        controller.saveRelation()
+        controller.selectPerson(mother)
+
+        val dialog = assertNotNull(controller.startAddingRelation(RelationMode.CHILD).relationDialog)
+
+        assertEquals(father, dialog.secondParent)
     }
 
     @Test

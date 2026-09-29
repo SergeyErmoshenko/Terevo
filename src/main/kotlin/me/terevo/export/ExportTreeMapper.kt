@@ -13,7 +13,11 @@ object ExportTreeMapper {
     private val cardSize = Size(width = 240.0, height = 72.0)
 
     fun map(tree: FamilyTree, options: LayoutOptions = LayoutOptions()): ExportTree {
-        val nodes = tree.persons.values.map { person -> LayoutNode(person.id.toNodeId(), person.name.sortKey) }
+        // See TreeCanvasMapper.map: sortKey must be a per-person key stable under other people's
+        // edits, not an alphabetical name key. tree.persons preserves load/insertion order.
+        val nodes = tree.persons.values.mapIndexed { index, person ->
+            LayoutNode(person.id.toNodeId(), index.toString().padStart(10, '0'))
+        }
         val edges = tree.relations.values.map { relation ->
             when (relation) {
                 is ParentChild -> LayoutEdge.Parentage(

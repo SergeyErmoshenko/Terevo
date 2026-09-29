@@ -107,6 +107,42 @@ class GenerationAssignerTest {
     }
 
     @Test
+    fun `a shallow sibling is not dragged deep when another sibling marries into a long lineage`() {
+        // Real reported shape: "ancestor" has several children. One of them ("deepMarrier")
+        // marries into a lineage with a long recorded ancestry of its own, which pulls deepMarrier
+        // down several generations. ancestor is deepMarrier's sole parent, so - per the
+        // zigzag-avoidance comment on relax() - ancestor gets pulled down to stay one generation
+        // above deepMarrier. Before the fix, relax()'s forward cascade then unconditionally
+        // reapplied that same deep target to every OTHER child of ancestor too, stranding a plain
+        // childless sibling many generations below where it belongs even though nothing about its
+        // own lineage required it. That sibling must stay exactly one generation below ancestor,
+        // no matter how deep deepMarrier's marriage pulls the rest of the tree.
+        val graph = graphOf(
+            nodes = listOf(
+                "ancestor", "deepMarrier", "shallowSibling", "otherShallowSibling",
+                "spouseAncestor1", "spouseAncestor2", "spouseAncestor3", "spouse",
+            ),
+            edges = listOf(
+                parentage("ancestor", "deepMarrier"),
+                parentage("ancestor", "shallowSibling"),
+                parentage("ancestor", "otherShallowSibling"),
+                parentage("spouseAncestor1", "spouseAncestor2"),
+                parentage("spouseAncestor2", "spouseAncestor3"),
+                parentage("spouseAncestor3", "spouse"),
+                union("deepMarrier", "spouse"),
+            ),
+        )
+
+        val generations = GenerationAssigner.assign(graph).generations
+
+        val ancestorGen = generations.getValue(nodeId("ancestor"))
+        assertEquals(0, ancestorGen, "a multi-child ancestor should never be pulled off generation 0")
+        assertEquals(1, generations.getValue(nodeId("shallowSibling")))
+        assertEquals(1, generations.getValue(nodeId("otherShallowSibling")))
+        assertEquals(generations.getValue(nodeId("deepMarrier")), generations.getValue(nodeId("spouse")))
+    }
+
+    @Test
     fun `ten thousand node chain is assigned iteratively and deterministically`() {
         val count = 10_000
         val graph = TreeGraph.of(

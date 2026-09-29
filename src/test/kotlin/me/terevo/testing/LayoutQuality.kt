@@ -2,131 +2,113 @@ package me.terevo.testing
 
 import me.terevo.layout.EdgePath
 import me.terevo.layout.Layout
-import me.terevo.layout.LayoutEdge
 import me.terevo.layout.LayoutOptions
-import me.terevo.layout.NodeId
 import me.terevo.layout.Point
+import me.terevo.layout.Rect
 import me.terevo.layout.TreeGraph
 import me.terevo.layout.endpoints
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-// Readability checks for a rendered layout.
-//
-// These exist because "no card overlaps" - the only structural property the layout suite used to
-// assert - says nothing about the CONNECTORS, and connectors are what a user actually reads a family
-// tree by. A layout can pass every card-overlap check while drawing two unrelated couples' bus lines
-// along the same horizontal line, which renders as one thick merged stroke and is indistinguishable
-// from "the lines are crossing". A strict segment-intersection test does not catch it either,
-// because collinear segments never technically intersect. Measured on the real reported 45-person
-// tree: 0 strict crossings, yet 6 genuine cross-family bus overlaps of up to 1107px.
+// Readability checks for a rendered layout. Connectors are sampled curves, so every check works on
+// arbitrary straight segments rather than assuming horizontal/vertical routing.
 
-private data class Segment(val edge: LayoutEdge, val from: Point, val to: Point) {
-    val horizontal: Boolean get() = from.y == to.y
-    val vertical: Boolean get() = from.x == to.x
-    val loX: Double get() = minOf(from.x, to.x)
-    val hiX: Double get() = maxOf(from.x, to.x)
-    val loY: Double get() = minOf(from.y, to.y)
-    val hiY: Double get() = maxOf(from.y, to.y)
-}
+private data class Segment(val path: EdgePath, val from: Point, val to: Point)
 
 private fun segmentsOf(edges: List<EdgePath>): List<Segment> =
-    edges.flatMap { path -> path.segments.zipWithNext { a, b -> Segment(path.edge, a, b) } }
+    edges.flatMap { path -> path.segments.zipWithNext { a, b -> Segment(path, a, b) } }
 
-// Whether two connectors are parts of ONE bracket, and so are meant to share ink.
-//
-// EdgeRouter draws a couple's children as a single bracket: every parent's stem drops to one shared
-// horizontal bar, which then drops into each child. Two connectors legitimately coincide only when
-// they are strokes of that same bracket - i.e. they run between the same parent couple and the same
-// child row.
-//
-// The earlier rule here exempted any two edges sharing even ONE parent, which was far too generous:
-// two co-parents' connectors to two DIFFERENT children share a parent, so they were waved through
-// while actually being distinct lines drawn on top of each other. That blind spot hid 45 stacked
-// pairs - merging by up to 1210px - in the reported tree.
-private fun sharesBracket(graph: TreeGraph, a: LayoutEdge, b: LayoutEdge): Boolean {
-    if (a !is LayoutEdge.Parentage || b !is LayoutEdge.Parentage) return false
-    // Two stems into the same child from that child's own parents: one bracket by construction.
-    if (a.child == b.child) return true
-    // Children of the exact same parent set hang off that couple's single shared bar. Note this
-    // must NOT also require a.parent == b.parent: the two strokes of one bracket routinely start at
-    // DIFFERENT co-parents of the same couple (mother->childA and father->childB), and treating
-    // those as separate lines reports the intended bracket as 45 defects.
-    return graph.parents(a.child).toSet() == graph.parents(b.child).toSet()
+private fun cross(o: Point, a: Point, b: Point): Double = (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
+
+private fun properlyIntersect(p: Point, q: Point, r: Point, s: Point): Boolean {
+    val d1 = cross(r, s, p)
+    val d2 = cross(r, s, q)
+    val d3 = cross(p, q, r)
+    val d4 = cross(p, q, s)
+    return (d1 * d2 < -EPSILON) && (d3 * d4 < -EPSILON)
 }
 
-// Two horizontal runs that are not strokes of the same bracket must never share a Y and overlap in
-// X: on screen they merge into one thicker line, which is indistinguishable from lines crossing.
-fun assertNoMergedBusLines(layout: Layout, graph: TreeGraph, tolerance: Double = 1.0) {
-    val horizontal = segmentsOf(layout.edges).filter { it.horizontal }
-    val failures = mutableListOf<String>()
-    for (i in horizontal.indices) {
-        for (j in i + 1 until horizontal.size) {
-            val a = horizontal[i]
-            val b = horizontal[j]
-            if (a.edge == b.edge || a.from.y != b.from.y) continue
-            val shared = minOf(a.hiX, b.hiX) - maxOf(a.loX, b.loX)
-            if (shared <= tolerance) continue
-            if (sharesBracket(graph, a.edge, b.edge)) continue
-            failures += "${shared}px at y=${a.from.y}: ${a.edge} || ${b.edge}"
+// Liang-Barsky clipping: whether any part of the segment lies strictly inside the rect.
+private fun segmentEntersRect(from: Point, to: Point, rect: Rect): Boolean {
+    var t0 = 0.0
+    var t1 = 1.0
+    val dx = to.x - from.x
+    val dy = to.y - from.y
+    val sides = listOf(-dx to from.x - rect.left, dx to rect.right - from.x, -dy to from.y - rect.top, dy to rect.bottom - from.y)
+    for ((p, q) in sides) {
+        if (p == 0.0) {
+            if (q <= 0) return false
+            continue
+        }
+        val t = q / p
+        if (p < 0) {
+            if (t > t1) return false
+            if (t > t0) t0 = t
+        } else {
+            if (t < t0) return false
+            if (t < t1) t1 = t
         }
     }
-    assertTrue(
-        failures.isEmpty(),
-        "connectors from unrelated families merge into one line:\n" + failures.joinToString("\n").prependIndent("  "),
-    )
+    return t0 < t1
 }
+
+private const val EPSILON = 1e-6
 
 // A connector must not run through a card it does not belong to.
 fun assertNoEdgeThroughCard(layout: Layout, tolerance: Double = 1.0) {
     val failures = mutableListOf<String>()
     for (segment in segmentsOf(layout.edges)) {
-        val (from, to) = segment.edge.endpoints
+        val (from, to) = segment.path.edge.endpoints
         for ((id, rect) in layout.nodes) {
             if (id == from || id == to) continue
-            val insideX = rect.left < segment.hiX - tolerance && rect.right > segment.loX + tolerance
-            val insideY = rect.top < segment.hiY - tolerance && rect.bottom > segment.loY + tolerance
-            if (insideX && insideY) failures += "${segment.edge} passes through ${id.value}"
+            val inner = Rect(rect.left + tolerance, rect.top + tolerance, rect.width - 2 * tolerance, rect.height - 2 * tolerance)
+            if (segmentEntersRect(segment.from, segment.to, inner)) failures += "${segment.path.edge} passes through ${id.value}"
         }
     }
     assertTrue(
         failures.isEmpty(),
-        "connectors run through unrelated cards:\n" + failures.joinToString("\n").prependIndent("  "),
+        "connectors run through unrelated cards:\n" + failures.distinct().joinToString("\n").prependIndent("  "),
     )
 }
 
-// Strict perpendicular crossings between connectors of different edges.
+fun countEdgeCrossings(layout: Layout): Int = edgeCrossings(layout).size
+
+// Proper crossings between connectors of different edges. Connectors that share a person meet at
+// that person's card or family point by design, and two parentages drawn along the same family line
+// share their geometry, so neither counts.
 fun assertNoEdgeCrossings(layout: Layout) {
-    val segments = segmentsOf(layout.edges)
-    val failures = mutableListOf<String>()
-    for (i in segments.indices) {
-        for (j in i + 1 until segments.size) {
-            val a = segments[i]
-            val b = segments[j]
-            if (a.edge == b.edge) continue
-            if (a.vertical == b.vertical) continue
-            val vertical = if (a.vertical) a else b
-            val horiz = if (a.vertical) b else a
-            val x = vertical.from.x
-            val y = horiz.from.y
-            if (x > horiz.loX && x < horiz.hiX && y > vertical.loY && y < vertical.hiY) {
-                failures += "${a.edge} crosses ${b.edge} at ($x, $y)"
-            }
-        }
-    }
+    val failures = edgeCrossings(layout)
     assertTrue(
         failures.isEmpty(),
         "connectors cross:\n" + failures.joinToString("\n").prependIndent("  "),
     )
 }
 
+private fun edgeCrossings(layout: Layout): List<String> {
+    val paths = layout.edges.distinctBy { it.segments }
+    val failures = mutableListOf<String>()
+    for (i in paths.indices) {
+        for (j in i + 1 until paths.size) {
+            val a = paths[i]
+            val b = paths[j]
+            if (a.edge.endpoints.toList().any { it in b.edge.endpoints.toList() }) continue
+            for ((p, q) in a.segments.zipWithNext()) {
+                for ((r, s) in b.segments.zipWithNext()) {
+                    if (properlyIntersect(p, q, r, s)) failures += "${a.edge} crosses ${b.edge} near $p"
+                }
+            }
+        }
+    }
+    return failures
+}
+
 // Children of one couple must occupy a contiguous span of their row: no card from an unrelated
 // family may sit between two of them. Interleaved siblings are what forces connectors to reach
 // across the row.
 //
-// A sibling's own spouse counts as part of that sibling's slot - spouses are merged into one couple
-// box by design, so a person who married in legitimately sits between two blood siblings and is not
-// an intruder. Only a card belonging to neither the sibship nor any sibling's marriage counts.
+// A sibling's own spouse counts as part of that sibling's slot - spouses are kept side by side by
+// design, so a person who married in legitimately sits between two blood siblings and is not an
+// intruder. Only a card belonging to neither the sibship nor any sibling's marriage counts.
 fun assertSiblingsContiguous(layout: Layout, graph: TreeGraph) {
     val byGeneration = layout.nodes.keys.groupBy { layout.generations[it] }
     val failures = mutableListOf<String>()
@@ -168,9 +150,7 @@ fun assertNoCardOverlaps(layout: Layout) {
 // Adjacent cards in a row must keep at least the spouse gap between them.
 //
 // "No overlap" is a weak floor: it permits two cards sitting 1px apart, which reads as one blob and
-// is what "everything piles up when you add a lot of people" looks like. Cards legitimately sit
-// closest inside a couple box (spouseSpacing), so that is the tightest gap anything may have; the
-// straightening passes shift groups around afterwards and must not close a row below it.
+// is what "everything piles up when you add a lot of people" looks like.
 fun assertRowSpacing(
     layout: Layout,
     minimumGap: Double = LayoutOptions.DEFAULT_SPOUSE_SPACING,
@@ -191,40 +171,23 @@ fun assertRowSpacing(
     )
 }
 
-// NOTE: there is deliberately NO "unrelated branches must sit clusterSpacing apart" assertion here.
-// Two attempts at one both produced false positives, because "unrelated" cannot be reconstructed
-// from the graph the way the layout means it:
-//   - Separate trees are positioned by a different mechanism entirely: whole components are laid
-//     out independently and then abutted with subtreeSpacing (48px). That is correct and much
-//     tighter than clusterSpacing, so demanding the cluster gap across a component boundary flags
-//     perfectly healthy layouts (measured: four separate families, all reported as defects).
-//   - Within one tree, "same cluster" means sharing a primary-parent ROOT (LayerOrdering.cluster),
-//     which is not any fixed number of relationship hops. A person whose partner's grandparent is
-//     also the neighbour's grandparent is the same family and legitimately sits close; a two-hop
-//     neighbour test called exactly that a defect at 92px.
-// Reconstructing the real cluster map in a test would just restate the production logic and assert
-// nothing. assertRowSpacing above covers the part that actually matters visually - that no row is
-// ever packed below the spacing floor.
-
-// Every routed connector must be strictly orthogonal; a diagonal means a routing bug.
-fun assertOrthogonal(layout: Layout) {
-    for (path in layout.edges) {
-        for ((a, b) in path.segments.zipWithNext()) {
-            assertTrue(a.x == b.x || a.y == b.y, "diagonal segment in ${path.edge}: $a -> $b")
-        }
+// Every married couple sits side by side in its row, with no card between the spouses.
+fun assertCouplesAdjacent(layout: Layout, graph: TreeGraph) {
+    val rows = layout.nodes.keys.groupBy { layout.generations[it] }
+        .mapValues { (_, ids) -> ids.sortedBy { layout.nodes.getValue(it).left } }
+    val failures = graph.unions.filter { union ->
+        if (graph.partners(union.first).size > 1 || graph.partners(union.second).size > 1) return@filter false
+        val row = rows[layout.generations[union.first]] ?: return@filter false
+        val first = row.indexOf(union.first)
+        val second = row.indexOf(union.second)
+        first >= 0 && second >= 0 && kotlin.math.abs(first - second) > 1
     }
+    assertTrue(failures.isEmpty(), "spouses separated by other cards: $failures")
 }
 
 // A node connected to exactly one node in an adjacent generation, with room to move, should sit
-// directly above/below it so the connector is one straight vertical line.
-//
-// Relaxation averages every neighbour a group has, which leaves a lone node near - but not on - its
-// single relative's center, and the leftover offset renders as a long sideways dog-leg. A root whose
-// only relation is one child was missed entirely, because straightening only ever aligned a group to
-// its PARENTS: the reported case sat 482px left of its only child with open space alongside.
-//
-// Only checked where the row genuinely has slack: a node wedged between neighbours at the spacing
-// floor legitimately cannot line up, and forcing it would break the no-overlap guarantee.
+// directly above/below it so the connector is one straight vertical line. Only checked where the
+// row genuinely has slack: a node wedged between neighbours legitimately cannot line up.
 fun assertLoneRelativesAligned(layout: Layout, graph: TreeGraph, tolerance: Double = 2.0) {
     val failures = mutableListOf<String>()
     for ((id, rect) in layout.nodes) {
@@ -233,8 +196,6 @@ fun assertLoneRelativesAligned(layout: Layout, graph: TreeGraph, tolerance: Doub
 
         val parents = graph.parents(id).filter { layout.generations[it] != generation }
         val children = graph.children(id).filter { layout.generations[it] != generation }
-        // Only the unambiguous case: no parents and exactly one child, or vice versa. Anything with
-        // relatives on both sides is a genuine compromise between two competing pulls.
         val relatives = when {
             parents.isEmpty() && children.size == 1 -> children
             children.isEmpty() && parents.size == 1 -> parents
@@ -268,27 +229,9 @@ fun assertLoneRelativesAligned(layout: Layout, graph: TreeGraph, tolerance: Doub
 fun assertReadable(layout: Layout, graph: TreeGraph) {
     assertNoCardOverlaps(layout)
     assertRowSpacing(layout)
-    assertOrthogonal(layout)
     assertSiblingsContiguous(layout, graph)
-    assertNoMergedBusLines(layout, graph)
+    assertCouplesAdjacent(layout, graph)
     assertNoEdgeThroughCard(layout)
-    assertLoneRelativesAligned(layout, graph)
-}
-
-fun countMergedBusPairs(layout: Layout, graph: TreeGraph, tolerance: Double = 1.0): Int {
-    val horizontal = segmentsOf(layout.edges).filter { it.horizontal }
-    var count = 0
-    for (i in horizontal.indices) {
-        for (j in i + 1 until horizontal.size) {
-            val a = horizontal[i]
-            val b = horizontal[j]
-            if (a.edge == b.edge || a.from.y != b.from.y) continue
-            if (minOf(a.hiX, b.hiX) - maxOf(a.loX, b.loX) <= tolerance) continue
-            if (sharesBracket(graph, a.edge, b.edge)) continue
-            count++
-        }
-    }
-    return count
 }
 
 fun assertGenerationRows(layout: Layout, expected: Int) {

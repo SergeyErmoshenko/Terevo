@@ -15,8 +15,21 @@ object TreeCanvasMapper {
         options: LayoutOptions = LayoutOptions(),
         mediaRepository: MediaRepository = MediaRepository.NONE,
     ): TreeCanvasState {
-        val nodes = tree.persons.values.map { person ->
-            LayoutNode(person.id.toNodeId(), person.name.sortKey)
+        // sortKey feeds every tie-break the layout engine makes (generation-assignment ties,
+        // sibling/child/partner ordering, the order nodes are handed to Graphviz) as "this entity's
+        // stable position". person.name.sortKey - an alphabetical surname/given-name key meant
+        // for UI lists - is not that: it has no relation to tree structure, and it shifts
+        // relative to OTHER people's names whenever anyone's name is edited or a new person's
+        // name happens to sort between two existing ones, even though neither event changes any
+        // actual relationship. That turned every tie-break silently alphabetical and unstable
+        // under ordinary edits - reproduced by taking a passing regression-test tree and renaming
+        // one deep-marriage chain to different (still-fictitious) names with no structural
+        // change, which alone was enough to break assertLoneRelativesAligned. tree.persons
+        // preserves load/insertion order (PersistentMap from FamilyTree.of), so each person's
+        // own index in it is already a per-person key untouched by anyone else's name or by
+        // additions elsewhere - exactly the stability the layout code already assumed it had.
+        val nodes = tree.persons.values.mapIndexed { index, person ->
+            LayoutNode(person.id.toNodeId(), index.toString().padStart(10, '0'))
         }
         val edges = tree.relations.values.map { relation ->
             when (relation) {

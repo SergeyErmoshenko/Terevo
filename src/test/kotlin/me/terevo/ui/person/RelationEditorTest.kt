@@ -39,6 +39,23 @@ class RelationEditorTest {
     }
 
     @Test
+    fun `a second parent already recorded on an existing child does not fail linking the first`() {
+        // The add-child dialog now pre-fills the parent's spouse as the second parent, so linking an
+        // existing child who already has that spouse as a parent must still link the first parent.
+        val father = person()
+        val mother = person()
+        val child = person()
+        val motherLink = ParentChild.of(parent = mother.id, child = child.id).shouldBeOk()
+        val tree = FamilyTree.of(listOf(father, mother, child), listOf(motherLink)).shouldBeOk()
+        val bus = CommandBus(tree, InMemoryTreeRepository(tree))
+
+        val result = RelationEditor(bus).addChild(father.id, child.id, ParentKind.BIOLOGICAL, secondParent = mother.id)
+
+        assertIs<RelationResult.Success>(result)
+        assertEquals(setOf(father.id, mother.id), bus.tree.value.parentsOf(child.id).toSet())
+    }
+
+    @Test
     fun `duplicate relation returns clear Russian message`() {
         val parent = person()
         val child = person()
@@ -82,11 +99,13 @@ class RelationEditorTest {
             ),
         ).shouldBeOk()
 
-        val error = assertIs<RelationResult.Error>(editor(tree).addParent(child.id, grandparent.id, ParentKind.BIOLOGICAL))
+        val error =
+            assertIs<RelationResult.Error>(editor(tree).addParent(child.id, grandparent.id, ParentKind.BIOLOGICAL))
 
         assertTrue(error.message.startsWith("Эта связь создаст цикл"))
         assertTrue("→" in error.message)
     }
 
-    private fun editor(tree: FamilyTree): RelationEditor = RelationEditor(CommandBus(tree, InMemoryTreeRepository(tree)))
+    private fun editor(tree: FamilyTree): RelationEditor =
+        RelationEditor(CommandBus(tree, InMemoryTreeRepository(tree)))
 }

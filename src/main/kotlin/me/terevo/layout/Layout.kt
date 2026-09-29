@@ -34,10 +34,6 @@ data class LayoutOptions(
     val subtreeSpacing: Double = DEFAULT_SUBTREE_SPACING,
     val generationSpacing: Double = DEFAULT_GENERATION_SPACING,
     val spouseSpacing: Double = DEFAULT_SPOUSE_SPACING,
-    // Extra gap added on top of siblingSpacing between two adjacent groups in the same row that
-    // belong to different family clusters (see LayerOrdering's cluster/root map), so unrelated
-    // branches that merely land on the same generation read as clearly separate blocks instead of
-    // packed as tight as ordinary siblings under the same parent.
     val clusterSpacing: Double = DEFAULT_CLUSTER_SPACING,
     val direction: LayoutDirection = LayoutDirection.TOP_DOWN,
 ) {
@@ -68,11 +64,14 @@ data class Layout(
     val edges: List<EdgePath>,
     val generations: Map<NodeId, Int>,
     val bounds: Rect,
+    // The topmost-generation node of the layout's largest family, used by the focus button to
+    // return to a sensible anchor instead of zooming out to fit the whole tree.
+    val mainPersonId: NodeId? = null,
 ) {
     fun rectOf(id: NodeId): Rect? = nodes[id]
 
     companion object {
-        val EMPTY: Layout = Layout(emptyMap(), emptyList(), emptyMap(), Rect.EMPTY)
+        val EMPTY: Layout = Layout(emptyMap(), emptyList(), emptyMap(), Rect.EMPTY, null)
     }
 }
 

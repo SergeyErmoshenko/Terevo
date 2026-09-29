@@ -44,9 +44,8 @@ internal object GenerationAssigner {
 
     private fun alignPartners(graph: TreeGraph, generations: MutableMap<NodeId, Int>) {
         // Co-parents without a recorded marriage still need to land on the same generation as
-        // married partners do, otherwise spouseGroups() (WalkerLayoutEngine) refuses to place them
-        // in one compound group and their shared child ends up owned by two separate root
-        // subtrees, corrupting layout for both.
+        // married partners do, otherwise their shared child's two parent lines start from
+        // different rows.
         val pairs = (graph.unions.map { it.first to it.second } + coParentPairs(graph))
             .distinct()
             .sortedWith(compareBy({ graph.orderOf(it.first) }, { graph.orderOf(it.second) }))
@@ -82,8 +81,18 @@ internal object GenerationAssigner {
     // whose own lineage simply has more recorded generations leaves that spouse's own parent
     // stranded behind by two or more generations - turning a plain one-hop parent/child edge into
     // a multi-generation edge that gets rendered as a dummy-waypoint zigzag instead of a straight
-    // connector. Raising the parent is always safe: it only ever increases generation numbers, and
-    // the forward cascade above already keeps that parent's other children consistent afterward.
+    // connector.
+    //
+    // But raising the parent is only ever worth it when that parent has no OTHER children: the
+    // forward cascade above re-applies to every child of a raised node unconditionally, so pulling
+    // a multi-child parent down to save one child's edge from a zigzag drags every sibling's edge
+    // into a zigzag instead - trading one bent connector for several, and stranding the parent
+    // itself (and any of its own untouched relatives) many generations below where it actually
+    // belongs. A real family tree hits this constantly: one child marries into a lineage with a
+    // long recorded ancestry while their siblings stay childless or shallow, and the shallow
+    // siblings (and the parent) used to get needlessly dragged down with the deep one. Restricting
+    // this to sole children keeps the zigzag-avoidance behavior for the case it actually helps -
+    // a lone ancestor with a single child - without letting it cascade sideways onto siblings.
     private fun relax(graph: TreeGraph, generations: MutableMap<NodeId, Int>, node: NodeId, minGeneration: Int) {
         val previous = generations.getValue(node)
         if (previous >= minGeneration) return
@@ -92,7 +101,7 @@ internal object GenerationAssigner {
             relax(graph, generations, child, minGeneration + 1)
         }
         for (parent in graph.parents(node)) {
-            if (generations.getValue(parent) == previous - 1) {
+            if (graph.children(parent).size == 1 && generations.getValue(parent) == previous - 1) {
                 relax(graph, generations, parent, minGeneration - 1)
             }
         }

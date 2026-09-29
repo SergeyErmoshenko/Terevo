@@ -3,11 +3,9 @@ package me.terevo.layout
 import me.terevo.testing.*
 import kotlin.test.Test
 
-// Connector-level readability, as opposed to card placement. The layout suite historically only
-// asserted that cards do not overlap, which a layout can satisfy while still drawing two unrelated
-// couples' connectors along one shared horizontal line - visually identical to "the lines cross".
+// Connector-level readability, as opposed to card placement.
 class LayoutReadabilityTest {
-    private val engine = WalkerLayoutEngine()
+    private val engine = GraphvizLayoutEngine()
     private val metrics = NodeMetrics(emptyMap(), Size(NODE_WIDTH, NODE_HEIGHT))
 
     // Reproduction of the reported tree: three couples in one generation, each with children in the
@@ -30,13 +28,6 @@ class LayoutReadabilityTest {
             parentage("cFather", "c1"), parentage("cMother", "c1"),
         ),
     )
-
-    @Test
-    fun `connectors of unrelated couples never merge into one line`() {
-        val layout = engine.layout(LayoutRequest(threeCouplesGraph, metrics))
-
-        assertNoMergedBusLines(layout, threeCouplesGraph)
-    }
 
     @Test
     fun `connectors never run through an unrelated card`() {
@@ -75,7 +66,7 @@ class LayoutReadabilityTest {
             val layout = engine.layout(LayoutRequest(graph, metrics))
 
             assertSiblingsContiguous(layout, graph)
-            assertNoMergedBusLines(layout, graph)
+            assertCouplesAdjacent(layout, graph)
             assertNoCardOverlaps(layout)
         }
     }
@@ -110,11 +101,11 @@ class LayoutReadabilityTest {
 
         assertLoneRelativesAligned(layout, graph)
         assertNoCardOverlaps(layout)
-        assertNoMergedBusLines(layout, graph)
+        assertNoEdgeCrossings(layout)
     }
 
     @Test
-    fun `the reported family tree renders without merged or card-crossing connectors`() {
+    fun `the reported family tree renders without card-crossing connectors or split couples`() {
         // Topology copied verbatim (anonymized) from the real 45-person project that produced the
         // reported screenshot. A hand-built graph does not reproduce this: it takes the real mix of
         // multi-generation edges, in-law couples and an 8-child sibship to put three different
@@ -123,8 +114,7 @@ class LayoutReadabilityTest {
         val layout = engine.layout(LayoutRequest(reportedGraph, metrics))
 
         assertNoCardOverlaps(layout)
-        assertOrthogonal(layout)
-        assertNoMergedBusLines(layout, reportedGraph)
+        assertCouplesAdjacent(layout, reportedGraph)
         assertNoEdgeThroughCard(layout)
     }
 

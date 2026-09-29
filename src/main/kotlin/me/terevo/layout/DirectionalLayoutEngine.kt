@@ -24,6 +24,7 @@ private fun Layout.transposed(): Layout = Layout(
     edges = edges.map { it.copy(segments = it.segments.map { point -> point.transposed() }) },
     generations = generations,
     bounds = bounds.transposed(),
+    mainPersonId = mainPersonId,
 )
 
 /**
@@ -44,5 +45,6 @@ private fun Layout.mirroredVertically(): Layout {
         edges = edges.map { it.copy(segments = it.segments.map(::mirrorPoint)) },
         generations = generations,
         bounds = mirrorRect(bounds),
+        mainPersonId = mainPersonId,
     )
 }

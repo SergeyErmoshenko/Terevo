@@ -341,6 +341,7 @@ class AppController(
                 source = source,
                 people = eligibleRelationCandidates(tree, mode, source.id),
                 secondParentCandidates = secondParentCandidates(tree, mode, source.id),
+                secondParent = defaultSecondParent(tree, mode, source.id),
             ),
         )
         return state
@@ -357,6 +358,14 @@ class AppController(
         } else {
             emptyList()
         }
+
+    // A child added to someone with exactly one spouse is, almost always, that couple's child. The
+    // second parent used to default to "none", so the child was silently recorded with one parent
+    // only and drawn off a separate line instead of the couple's shared bracket - reported after
+    // adding a child to Ефросинья Степановна, whose other eight children all have both parents.
+    // Several spouses stay ambiguous, so the choice is left to the user there.
+    private fun defaultSecondParent(tree: FamilyTree, mode: RelationMode, source: PersonId): PersonId? =
+        if (mode == RelationMode.CHILD) tree.spousesOf(source).singleOrNull() else null
 
     fun updateRelationDialog(dialog: RelationDialogState): AppState {
         state = state.copy(relationDialog = dialog)
@@ -439,6 +448,7 @@ class AppController(
                 source = source,
                 people = eligibleRelationCandidates(tree, mode, source.id),
                 secondParentCandidates = secondParentCandidates(tree, mode, source.id),
+                secondParent = defaultSecondParent(tree, mode, source.id),
                 selected = menu.target,
             ),
             dragRelationMenu = null,

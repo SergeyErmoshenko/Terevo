@@ -19,13 +19,20 @@ class RelationEditor(
     fun addParent(parent: PersonId, child: PersonId, kind: ParentKind): RelationResult =
         executeRelation(ParentChild.of(parent = parent, child = child, kind = kind))
 
-    fun addChild(parent: PersonId, child: PersonId, kind: ParentKind, secondParent: PersonId? = null): RelationResult =
-        executeRelations(
+    // The second parent is now pre-filled with the parent's spouse, so it can already be recorded on
+    // an existing child (or be the chosen child) - a link that would make the whole batch fail. Such
+    // a second parent is dropped rather than failing the relation the user actually asked for.
+    fun addChild(parent: PersonId, child: PersonId, kind: ParentKind, secondParent: PersonId? = null): RelationResult {
+        val extraParent = secondParent?.takeIf {
+            it != child && it != parent && it !in commandBus.tree.value.parentsOf(child)
+        }
+        return executeRelations(
             listOfNotNull(
                 ParentChild.of(parent = parent, child = child, kind = kind),
-                secondParent?.let { ParentChild.of(parent = it, child = child, kind = kind) },
+                extraParent?.let { ParentChild.of(parent = it, child = child, kind = kind) },
             ),
         )
+    }
 
     fun addSpouse(
         first: PersonId,

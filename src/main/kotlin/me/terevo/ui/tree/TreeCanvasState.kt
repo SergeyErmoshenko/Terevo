@@ -89,13 +89,25 @@ fun reduceTreeCanvas(state: TreeCanvasState, intent: TreeCanvasIntent): TreeCanv
     is TreeCanvasIntent.AddPersonAt -> state
     is TreeCanvasIntent.AddRelativeAt -> state
     TreeCanvasIntent.ClearSelection -> state.copy(highlight = TreeHighlight.NONE)
-    TreeCanvasIntent.FitToScreen -> state.copy(
-        camera = state.camera.fit(
-            state.layout.bounds,
-            state.viewport,
-            FIT_PADDING
-        )
-    )
+    TreeCanvasIntent.FitToScreen -> {
+        val mainPersonRect = state.layout.mainPersonId?.let(state.layout::rectOf)
+        if (mainPersonRect != null) {
+            // Resets to a known-good zoom instead of preserving whatever scale the user happened
+            // to be at - returning to the main person at an arbitrary current zoom can leave them
+            // too close in or too far out to make sense of where you landed.
+            state.copy(
+                camera = Camera(scale = Camera.DEFAULT_SCALE).center(mainPersonRect, state.viewport),
+            )
+        } else {
+            state.copy(
+                camera = state.camera.fit(
+                    state.layout.bounds,
+                    state.viewport,
+                    FIT_PADDING
+                )
+            )
+        }
+    }
 
     TreeCanvasIntent.ActualSize -> state.copy(camera = Camera(scale = 1.0, offset = state.camera.offset))
     TreeCanvasIntent.CenterSelected -> {

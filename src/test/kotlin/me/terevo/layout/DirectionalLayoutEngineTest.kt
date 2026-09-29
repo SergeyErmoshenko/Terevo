@@ -8,7 +8,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class DirectionalLayoutEngineTest {
-    private val engine = DirectionalLayoutEngine(WalkerLayoutEngine())
+    private val engine = DirectionalLayoutEngine(GraphvizLayoutEngine())
 
     // Square node size: makes the "rotated by 90 degrees" property a plain coordinate
     // swap to verify, independent of how the algorithm splits spacing across width vs height.
@@ -22,7 +22,7 @@ class DirectionalLayoutEngineTest {
         )
         val request = LayoutRequest(graph, metrics, LayoutOptions(direction = LayoutDirection.TOP_DOWN))
 
-        val raw = WalkerLayoutEngine().layout(request)
+        val raw = GraphvizLayoutEngine().layout(request)
         val layout = engine.layout(request)
         val axis = raw.bounds.top + raw.bounds.bottom
 

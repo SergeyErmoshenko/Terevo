@@ -7,7 +7,7 @@ import kotlinx.coroutines.test.runTest
 import me.terevo.layout.LayoutRequest
 import me.terevo.layout.NodeMetrics
 import me.terevo.layout.Size
-import me.terevo.layout.WalkerLayoutEngine
+import me.terevo.layout.GraphvizLayoutEngine
 import me.terevo.testing.NODE_HEIGHT
 import me.terevo.testing.NODE_WIDTH
 import me.terevo.testing.graphOf
@@ -21,7 +21,7 @@ class LayoutCoordinatorTest {
     @Test
     fun `publishes layout on state flow`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
-        val coordinator = LayoutCoordinator(this, WalkerLayoutEngine(), dispatcher)
+        val coordinator = LayoutCoordinator(this, GraphvizLayoutEngine(), dispatcher)
         val request = LayoutRequest(
             graph = graphOf(listOf("person")),
             metrics = NodeMetrics(emptyMap(), Size(NODE_WIDTH, NODE_HEIGHT)),
@@ -36,7 +36,7 @@ class LayoutCoordinatorTest {
     @Test
     fun `latest submitted request replaces pending calculation`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
-        val coordinator = LayoutCoordinator(this, WalkerLayoutEngine(), dispatcher)
+        val coordinator = LayoutCoordinator(this, GraphvizLayoutEngine(), dispatcher)
         val metrics = NodeMetrics(emptyMap(), Size(NODE_WIDTH, NODE_HEIGHT))
 
         coordinator.submit(LayoutRequest(graphOf(listOf("old")), metrics))

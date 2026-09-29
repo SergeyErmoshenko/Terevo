@@ -242,4 +242,4 @@ private val CameraVectorConverter = TwoWayConverter<Camera, AnimationVector3D>(
 // Constant zoom step per scroll event, deliberately small so zooming stays slow and controllable.
 // Multiplicative, so the step is the fraction ADDED per scroll event - halving that fraction
 // (2% -> 1%) is what makes zooming half as fast, not halving the constant itself.
-private const val ZOOM_STEP: Double = 1.01
+private const val ZOOM_STEP: Double = 1.012

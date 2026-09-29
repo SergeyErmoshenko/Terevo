@@ -19,17 +19,61 @@ class CachedLayoutEngineTest {
     }
 
     @Test
-    fun `metrics change preserves origins and updates sizes`() {
+    fun `a width-only change keeps the card centered in place and the connectors untouched`() {
         val engine = CachedLayoutEngine()
-        val graph = graphOf(listOf("person"))
+        val graph = graphOf(listOf("parent", "child"), listOf(parentage("parent", "child")))
         val first = engine.layout(LayoutRequest(graph, metrics))
-        val resizedMetrics = NodeMetrics(mapOf(nodeId("person") to Size(240.0, 80.0)), metrics.defaultSize)
+        val resizedMetrics = NodeMetrics(mapOf(nodeId("child") to Size(240.0, NODE_HEIGHT)), metrics.defaultSize)
 
         val second = engine.layout(LayoutRequest(graph, resizedMetrics))
 
-        assertEquals(first.rectOf(nodeId("person"))!!.copy(width = 240.0, height = 80.0), second.rectOf(nodeId("person")))
-        assertEquals(first.rectOf(nodeId("person"))!!.left, second.rectOf(nodeId("person"))!!.left)
-        assertEquals(first.rectOf(nodeId("person"))!!.top, second.rectOf(nodeId("person"))!!.top)
+        val before = first.rectOf(nodeId("child"))!!
+        val after = second.rectOf(nodeId("child"))!!
+        assertEquals(240.0, after.width)
+        assertEquals(before.centerX, after.centerX)
+        assertEquals(before.top, after.top)
+        assertEquals(first.edges, second.edges)
+    }
+
+    @Test
+    fun `a height change relays the tree out`() {
+        val engine = CachedLayoutEngine()
+        val graph = graphOf(listOf("parent", "child"), listOf(parentage("parent", "child")))
+        engine.layout(LayoutRequest(graph, metrics))
+        val taller = NodeMetrics(mapOf(nodeId("child") to Size(NODE_WIDTH, 120.0)), metrics.defaultSize)
+
+        val resized = engine.layout(LayoutRequest(graph, taller))
+
+        assertEquals(GraphvizLayoutEngine().layout(LayoutRequest(graph, taller)), resized)
+    }
+
+    @Test
+    fun `a name edit that would overlap a neighbor falls back to a full relayout`() {
+        // Reported case: in a small, tightly-packed family (little slack between siblings), editing
+        // one person's name lengthens their card. Reusing the cached x/y and only swapping in the
+        // new size - the ordinary, cheap "metrics changed" path - pushed the resized card's new
+        // right edge straight into the next sibling over, since the cached x was chosen to fit the
+        // OLD, narrower width. A full relayout naturally makes room instead. This mattered far more
+        // in small trees: a larger tree usually has enough slack elsewhere to absorb the same
+        // absolute growth without two cards ever touching.
+        val engine = CachedLayoutEngine()
+        val nodes = listOf("father", "mother", "kid1", "kid2", "kid3")
+        val edges = listOf(
+            union("father", "mother"),
+            parentage("father", "kid1"), parentage("mother", "kid1"),
+            parentage("father", "kid2"), parentage("mother", "kid2"),
+            parentage("father", "kid3"), parentage("mother", "kid3"),
+        )
+        val graph = graphOf(nodes, edges)
+        val narrow = NodeMetrics(emptyMap(), Size(160.0, 64.0))
+        engine.layout(LayoutRequest(graph, narrow))
+
+        val grown = NodeMetrics(mapOf(nodeId("kid1") to Size(400.0, 64.0)), narrow.defaultSize)
+        val resized = engine.layout(LayoutRequest(graph, grown))
+
+        assertNoCardOverlaps(resized)
+        val fresh = GraphvizLayoutEngine().layout(LayoutRequest(graph, grown))
+        assertEquals(fresh.nodes, resized.nodes)
     }
 
     @Test
@@ -93,7 +137,7 @@ class CachedLayoutEngineTest {
         val updated = engine.layout(LayoutRequest(changed, metrics))
 
         // Matches a layout computed from scratch, i.e. the cache never serves a stale position.
-        val fresh = WalkerLayoutEngine().layout(LayoutRequest(changed, metrics))
+        val fresh = GraphvizLayoutEngine().layout(LayoutRequest(changed, metrics))
         assertEquals(fresh.nodes, updated.nodes)
         assertEquals(
             original.generations.getValue(nodeId(newParent)) + 1,
