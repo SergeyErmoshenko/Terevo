@@ -38,7 +38,7 @@ jobs:
 
       - name: Build MSI
         shell: bash
-        run: ./gradlew --console=plain -Pversion=${{ steps.version.outputs.value }} packageMsi
+        run: ./gradlew --console=plain -Pversion=${{ steps.version.outputs.value }} -Dorg.gradle.java.home="$JAVA_HOME" packageMsi
 
       - name: Collect installer
         shell: bash
