@@ -239,7 +239,6 @@ class DotProcess(private val executable: String) {
     companion object {
         private const val TIMEOUT_SECONDS = 60L
         private const val IMAGE_DIRECTORY = "compose.application.resources.dir"
-        private const val PATH_NAME = "PATH"
 
         // Apps started from Finder get a minimal PATH, so well-known install locations are
         // checked before falling back to a PATH lookup.
@@ -251,7 +250,7 @@ class DotProcess(private val executable: String) {
         )
 
         fun locate(): DotProcess =
-            DotProcess(configured() ?: bundledDotPath(System.getProperty(IMAGE_DIRECTORY)) ?: installed() ?: PATH_NAME)
+            DotProcess(configured() ?: bundledDotPath(System.getProperty(IMAGE_DIRECTORY)) ?: installed() ?: pathDot())
 
         private fun configured(): String? =
             System.getProperty("terevo.dot") ?: System.getenv("TEREVO_DOT")
@@ -261,8 +260,21 @@ class DotProcess(private val executable: String) {
     }
 }
 
-internal fun bundledDotPath(imageDirectory: String?): String? =
-    imageDirectory
-        ?.let { File(File(it, "graphviz"), "dot") }
-        ?.takeIf { it.isFile }
+private val BUNDLED_DOT_LOCATIONS = listOf(
+    "graphviz/bin/dot.exe",
+    "graphviz/bin/dot",
+    "graphviz/dot.exe",
+    "graphviz/dot",
+)
+
+private fun isWindows(): Boolean = System.getProperty("os.name").startsWith("Windows")
+
+internal fun bundledDotPath(imageDirectory: String?): String? {
+    val resources = imageDirectory?.let(::File) ?: return null
+    return BUNDLED_DOT_LOCATIONS
+        .map { File(resources, it.replace('/', File.separatorChar)) }
+        .firstOrNull { it.isFile }
         ?.absolutePath
+}
+
+internal fun pathDot(): String = if (isWindows()) "dot.exe" else "dot"

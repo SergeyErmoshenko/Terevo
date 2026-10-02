@@ -13,7 +13,7 @@ plugins {
 }
 
 group = "me.terevo"
-version = providers.gradleProperty("version").getOrElse("1.0.0")
+version = providers.gradleProperty("version").getOrElse("1.0.1")
 
 val graphvizVersion = "12.2.1"
 val graphvizWindowsUrl =

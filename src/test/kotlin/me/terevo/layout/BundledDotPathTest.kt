@@ -15,19 +15,30 @@ class BundledDotPathTest {
     }
 
     @Test
-    fun `returns the dot shipped inside the application image`() {
-        val graphviz = base.resolve("graphviz").toFile().apply { mkdirs() }
-        val dot = graphviz.resolve("dot").apply { createNewFile() }
+    fun `returns the windows dot shipped inside the application image`() {
+        val dot = base.resolve("graphviz/bin/dot.exe").toFile().apply {
+            parentFile.mkdirs()
+            createNewFile()
+        }
+
+        assertEquals(dot.absolutePath, bundledDotPath(base.toString()))
+    }
+
+    @Test
+    fun `returns the unix dot shipped inside the application image`() {
+        val dot = base.resolve("graphviz/bin/dot").toFile().apply {
+            parentFile.mkdirs()
+            createNewFile()
+        }
 
         assertEquals(dot.absolutePath, bundledDotPath(base.toString()))
     }
 
     @Test
     fun `returns nothing when the image ships no dot`() {
-        val image = base.resolve("empty-image").toFile().apply { mkdirs() }
-        image.resolve("graphviz").mkdirs()
+        base.resolve("graphviz/bin").toFile().mkdirs()
 
-        assertNull(bundledDotPath(image.absolutePath))
+        assertNull(bundledDotPath(base.toString()))
     }
 
     @Test
