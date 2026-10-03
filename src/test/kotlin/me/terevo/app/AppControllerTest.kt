@@ -448,7 +448,7 @@ class AppControllerTest {
     }
 
     @Test
-    fun `fit to screen resets zoom and centers on the main person`() {
+    fun `fit to screen resets zoom and centers on the first person added`() {
         controller.create(locationOf("explicit-fit"))
         val parent = createPerson("Иванов", "Иван")
         controller.updateCanvas(me.terevo.ui.tree.TreeCanvasIntent.Resize(me.terevo.layout.Size(800.0, 600.0)))
@@ -457,7 +457,7 @@ class AppControllerTest {
         controller.updateCanvas(me.terevo.ui.tree.TreeCanvasIntent.Zoom(me.terevo.layout.Point(400.0, 300.0), 2.0))
 
         val canvas = controller.updateCanvas(me.terevo.ui.tree.TreeCanvasIntent.FitToScreen).canvas
-        val mainPersonRect = assertNotNull(canvas.layout.mainPersonId?.let(canvas.layout::rectOf))
+        val mainPersonRect = assertNotNull(canvas.layout.rectOf(me.terevo.layout.NodeId(parent.value.toString())))
 
         assertEquals(
             me.terevo.ui.tree.Camera(scale = me.terevo.ui.tree.Camera.DEFAULT_SCALE)
@@ -465,6 +465,26 @@ class AppControllerTest {
             canvas.camera,
         )
         assertEquals(me.terevo.ui.tree.Camera.DEFAULT_SCALE, canvas.camera.scale, "zoom must reset to default")
+    }
+
+    @Test
+    fun `home goes to the person picked from search until the filters are cleared`() {
+        controller.create(locationOf("search-home"))
+        val first = createPerson("Иванов", "Иван")
+        val found = createPerson("Петров", "Пётр")
+        controller.updateCanvas(me.terevo.ui.tree.TreeCanvasIntent.Resize(me.terevo.layout.Size(800.0, 600.0)))
+        fun homeRect() = controller.updateCanvas(me.terevo.ui.tree.TreeCanvasIntent.FitToScreen).canvas.let {
+            it.layout.rectOf(assertNotNull(it.homePersonId))
+        }
+        fun rectOf(id: me.terevo.domain.model.PersonId) =
+            controller.state.canvas.layout.rectOf(me.terevo.layout.NodeId(id.value.toString()))
+
+        controller.changeSearchFilter(me.terevo.ui.person.PersonSearchFilter(query = "Петров"))
+        controller.selectSearchResult(found)
+        assertEquals(rectOf(found), homeRect())
+
+        controller.changeSearchFilter(me.terevo.ui.person.PersonSearchFilter())
+        assertEquals(rectOf(first), homeRect())
     }
 
     @Test

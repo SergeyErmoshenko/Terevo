@@ -6,10 +6,11 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import kotlin.math.hypot
 
-// Lays the tree out with Graphviz `dot`: generations become forced ranks, every couple is
-// joined through a point-sized family node on a rank just below the spouses, and children of a
-// recorded couple hang from that family node. Graphviz decides the ordering,
-// the coordinates and the edge curves; this class only translates to DOT and back.
+// Lays the tree out with Graphviz `dot`: every couple is joined through a point-sized family node
+// on a rank just below the spouses, and children of a recorded couple hang from that family node.
+// Graphviz decides the rows (network simplex keeps cousins on one row even when one spouse's
+// recorded ancestry is deeper), the ordering, the coordinates and the edge curves; this class
+// only translates to DOT and back.
 class GraphvizLayoutEngine(private val dot: DotProcess = DotProcess.locate()) : LayoutEngine {
 
     override fun layout(request: LayoutRequest): Layout {
@@ -37,25 +38,38 @@ class GraphvizLayoutEngine(private val dot: DotProcess = DotProcess.locate()) : 
             }
         }
         val nodeBounds = Rect.enclosing(nodes.values)
+        val generations = rowsOf(nodes)
         return Layout(
             nodes = nodes,
             edges = edges,
-            generations = assignment.generations.filterKeys { it in visible },
+            generations = generations,
             bounds = edgeBounds?.union(nodeBounds) ?: nodeBounds,
-            mainPersonId = mainPerson(assignment, nodes),
+            mainPersonId = mainPerson(assignment.components, generations, nodes),
         )
+    }
+
+    // Graphviz chose the ranks, so a person's generation is simply which row it landed on, counted
+    // from the top. Cards in one rank share a center line.
+    private fun rowsOf(nodes: Map<NodeId, Rect>): Map<NodeId, Int> {
+        val rowKey = nodes.mapValues { (_, rect) -> Math.round(rect.centerY * 2) }
+        val rowIndex = rowKey.values.distinct().sorted().withIndex().associate { (index, key) -> key to index }
+        return rowKey.mapValues { (_, key) -> rowIndex.getValue(key) }
     }
 
     // DirectionalLayoutEngine mirrors the layout vertically, so the highest generation (the
     // youngest people) ends up on top; the anchor is the leftmost of them in the largest family.
-    private fun mainPerson(assignment: GenerationAssignment, nodes: Map<NodeId, Rect>): NodeId? {
-        val largest = assignment.components
+    private fun mainPerson(
+        components: List<List<NodeId>>,
+        generations: Map<NodeId, Int>,
+        nodes: Map<NodeId, Rect>,
+    ): NodeId? {
+        val largest = components
             .map { component -> component.filter { it in nodes } }
             .filter { it.isNotEmpty() }
             .maxByOrNull { it.size } ?: return null
-        val topGeneration = largest.maxOf { assignment.generations.getValue(it) }
+        val topGeneration = largest.maxOf { generations.getValue(it) }
         return largest
-            .filter { assignment.generations.getValue(it) == topGeneration }
+            .filter { generations.getValue(it) == topGeneration }
             .minByOrNull { nodes.getValue(it).left }
     }
 }
@@ -98,11 +112,9 @@ private class DotScene(
             val options = request.options
             val persons = graph.sortedNodeIds().filter { it in visible }
             val personNames = persons.withIndex().associate { (index, id) -> id to "n$index" }
-            val rows = sortedMapOf<Int, MutableList<String>>()
-            val familyRows = mutableMapOf<Int, MutableList<String>>()
-            persons.forEach { rows.getOrPut(generations.getValue(it)) { mutableListOf() } += personNames.getValue(it) }
 
             val nodeLines = mutableListOf<String>()
+            val rankLines = mutableListOf<String>()
             val edgeLines = mutableListOf<String>()
             val paths = mutableListOf<DotPath>()
             val declared = mutableListOf<DeclaredEdge>()
@@ -128,15 +140,16 @@ private class DotScene(
                 val first = personNames.getValue(union.first)
                 val second = personNames.getValue(union.second)
                 val style = if (union.dissolved) EdgeStyle.DISSOLVED_MARRIAGE else EdgeStyle.MARRIAGE
-                val generation = generations.getValue(union.first)
-                if (generation != generations.getValue(union.second)) {
+                // GenerationAssigner could not put these partners on one row (one descends from the
+                // other), so forcing the same rank would contradict the parent edges.
+                if (generations.getValue(union.first) != generations.getValue(union.second)) {
                     paths += DotPath(union, style, listOf(edge(first, second, "constraint=false") to first))
                     continue
                 }
                 val family = familyOf.getOrPut(pair) {
                     val name = "f${familyOf.size}"
                     nodeLines += "$name [shape=point width=$POINT_SIZE height=$POINT_SIZE];"
-                    familyRows.getOrPut(generation) { mutableListOf() } += name
+                    rankLines += "{rank=same; $first; $second; }"
                     name
                 }
                 val fromFirst = edge(first, family, "weight=$MARRIAGE_WEIGHT tailport=s")
@@ -146,6 +159,7 @@ private class DotScene(
 
             // A child whose two parents form a known couple (with the same kind of parentage)
             // hangs from that couple's family node; every other parentage is drawn directly.
+            var hops = 0
             val parentagesByChild = graph.parentages
                 .filter { it.parent in visible && it.child in visible }
                 .groupBy { it.child }
@@ -167,26 +181,18 @@ private class DotScene(
                         paths += DotPath(parentage, parentageStyle(parentage), listOf(id to family))
                     }
                 }
+                // A direct line also passes through its own point on the intermediate rank, so every
+                // edge joins a person to a point: ranking then keeps people on even ranks and points
+                // on odd ones, and no person can land on a family-point row.
                 for (parentage in remaining) {
                     val parentName = personNames.getValue(parentage.parent)
-                    val id = edge(parentName, childName, "tailport=s headport=n")
-                    paths += DotPath(parentage, parentageStyle(parentage), listOf(id to parentName))
+                    val hop = "h${hops++}"
+                    nodeLines += "$hop [shape=point width=$POINT_SIZE height=$POINT_SIZE];"
+                    val down = edge(parentName, hop, "tailport=s")
+                    val toChild = edge(hop, childName, "headport=n")
+                    paths += DotPath(parentage, parentageStyle(parentage), listOf(down to parentName, toChild to hop))
                 }
             }
-
-            // An invisible chain of anchors pins every generation (and the family-node rank below
-            // it) to its own rank, so rows line up across the whole canvas even between unrelated
-            // families.
-            val rankLines = mutableListOf<String>()
-            val anchors = rows.keys.flatMap { generation ->
-                listOf(rows.getValue(generation), familyRows[generation].orEmpty())
-            }.withIndex().map { (index, members) ->
-                val anchor = "g$index"
-                nodeLines += "$anchor [shape=point width=$POINT_SIZE height=$POINT_SIZE style=invis];"
-                rankLines += "{rank=same; ${(listOf(anchor) + members).joinToString("; ")}; }"
-                anchor
-            }
-            anchors.zipWithNext { upper, lower -> edgeLines += "$upper -> $lower [style=invis weight=0];" }
 
             // Mincross ignores edge weights, so nothing else keeps a couple side by side. An
             // invisible cluster keeps its members contiguous without fixing which spouse is on the

@@ -157,6 +157,13 @@ class AppController(
         val results = PersonSearch.find(tree, filter)
         state = state.copy(searchFilter = filter, searchResults = results)
         state = remapSelection(tree, state.selectedPerson?.id)
+        if (filter.isEmpty()) state = state.copy(canvas = state.canvas.copy(searchAnchor = null))
+        return state
+    }
+
+    fun selectSearchResult(id: PersonId): AppState {
+        selectPerson(id)
+        state = state.copy(canvas = state.canvas.copy(searchAnchor = id.toNodeId()))
         return state
     }
 
@@ -784,7 +791,7 @@ class AppController(
         // slightly smaller and looked cramped. Fitting is now only done where the user asks for it
         // (the FitToScreen action) or on the first viewport measurement (TreeCanvasIntent.Resize).
         return TreeCanvasMapper.map(tree, options, mediaRepository)
-            .copy(viewport = state.canvas.viewport, camera = state.canvas.camera)
+            .copy(viewport = state.canvas.viewport, camera = state.canvas.camera, searchAnchor = state.canvas.searchAnchor)
     }
 
     @OptIn(ExperimentalTime::class)

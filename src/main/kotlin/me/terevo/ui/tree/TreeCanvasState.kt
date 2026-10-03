@@ -31,8 +31,17 @@ data class TreeCanvasState(
     val highlight: TreeHighlight = TreeHighlight.NONE,
     val nodeDrag: NodeDragState? = null,
     val tree: FamilyTree = FamilyTree.EMPTY,
+    // The person last picked from search results; the home button returns to them instead of
+    // the default anchor.
+    val searchAnchor: NodeId? = null,
 ) {
     val selected: NodeId? get() = highlight.selected
+
+    // tree.persons keeps load order, which is the order people were added.
+    val homePersonId: NodeId?
+        get() = searchAnchor?.takeIf { it in layout.nodes }
+            ?: tree.persons.keys.asSequence().map { NodeId(it.value.toString()) }.firstOrNull { it in layout.nodes }
+            ?: layout.mainPersonId
 }
 
 fun candidateRelation(mode: RelationMode, source: PersonId, target: PersonId) = when (mode) {
@@ -90,7 +99,7 @@ fun reduceTreeCanvas(state: TreeCanvasState, intent: TreeCanvasIntent): TreeCanv
     is TreeCanvasIntent.AddRelativeAt -> state
     TreeCanvasIntent.ClearSelection -> state.copy(highlight = TreeHighlight.NONE)
     TreeCanvasIntent.FitToScreen -> {
-        val mainPersonRect = state.layout.mainPersonId?.let(state.layout::rectOf)
+        val mainPersonRect = state.homePersonId?.let(state.layout::rectOf)
         if (mainPersonRect != null) {
             // Resets to a known-good zoom instead of preserving whatever scale the user happened
             // to be at - returning to the main person at an arbitrary current zoom can leave them

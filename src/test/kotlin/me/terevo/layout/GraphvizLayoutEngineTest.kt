@@ -85,6 +85,42 @@ class GraphvizLayoutEngineTest {
         }
     }
 
+    @Test
+    fun `cousins share a row even when one spouse's recorded ancestry is deeper`() {
+        // Reported shape: father's own lineage is recorded one generation deeper than his wife's,
+        // which used to push the wife (and every descendant) one row down while her sister's
+        // family stayed put, splitting first and second cousins across rows.
+        val graph = graphOf(
+            listOf(
+                "greatGrandfather", "grandfatherA", "grandmotherA", "father",
+                "sorokinF", "sorokinM", "lyudmila", "tatyana", "kotov",
+                "vladimir", "dmitry", "violetta", "maxim",
+            ),
+            listOf(
+                parentage("greatGrandfather", "grandfatherA"),
+                union("grandfatherA", "grandmotherA"),
+                parentage("grandfatherA", "father"), parentage("grandmotherA", "father"),
+                union("sorokinF", "sorokinM"),
+                parentage("sorokinF", "lyudmila"), parentage("sorokinM", "lyudmila"),
+                parentage("sorokinF", "tatyana"), parentage("sorokinM", "tatyana"),
+                union("father", "lyudmila"),
+                parentage("father", "vladimir"), parentage("lyudmila", "vladimir"),
+                union("kotov", "tatyana"),
+                parentage("kotov", "dmitry"), parentage("tatyana", "dmitry"),
+                parentage("vladimir", "violetta"),
+                parentage("dmitry", "maxim"),
+            ),
+        )
+        val rows = layout(graph).generations
+
+        fun row(id: String) = rows.getValue(nodeId(id))
+        row("lyudmila") shouldBe row("tatyana")
+        row("father") shouldBe row("lyudmila")
+        row("vladimir") shouldBe row("dmitry")
+        row("violetta") shouldBe row("maxim")
+        row("vladimir") shouldBe row("father") + 1
+    }
+
     private fun assertTouches(point: Point, rect: Rect) {
         val tolerance = 2.0
         assertTrue(

@@ -124,6 +124,7 @@ fun main() = application {
                 is AppAction.ChangeMediaPage -> appState = controller.changeMediaPage(action.delta)
                 AppAction.CloseMedia -> appState = controller.closeMedia()
                 is AppAction.SelectPerson -> appState = controller.selectPerson(action.id)
+                is AppAction.SelectSearchResult -> appState = controller.selectSearchResult(action.id)
                 is AppAction.ViewPerson -> appState = controller.viewPerson(action.id)
                 AppAction.ClosePersonView -> appState = controller.closePersonView()
                 is AppAction.UpdatePersonForm -> appState = controller.updatePersonForm(action.form)

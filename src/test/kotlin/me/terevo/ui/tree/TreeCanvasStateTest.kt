@@ -1,6 +1,11 @@
 package me.terevo.ui.tree
 
+import me.terevo.domain.model.FamilyTree
+import me.terevo.domain.model.Person
+import me.terevo.domain.model.PersonId
 import me.terevo.layout.*
+import me.terevo.testing.person
+import me.terevo.testing.shouldBeOk
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -36,4 +41,52 @@ class TreeCanvasStateTest {
 
         assertEquals(camera, resized.camera)
     }
+
+    @Test
+    fun `home button goes to the first person added to the tree`() {
+        val first = person(surname = "Первый")
+        val second = person(surname = "Второй")
+        val state = homeState(first, second, searchAnchor = null)
+
+        val homed = reduceTreeCanvas(state, TreeCanvasIntent.FitToScreen)
+
+        assertEquals(cameraOn(state, first), homed.camera)
+    }
+
+    @Test
+    fun `home button goes to the person picked from search instead`() {
+        val first = person(surname = "Первый")
+        val second = person(surname = "Второй")
+        val state = homeState(first, second, searchAnchor = second.id.node())
+
+        val homed = reduceTreeCanvas(state, TreeCanvasIntent.FitToScreen)
+
+        assertEquals(cameraOn(state, second), homed.camera)
+    }
+
+    private fun homeState(first: Person, second: Person, searchAnchor: NodeId?): TreeCanvasState {
+        val tree = FamilyTree.of(listOf(first, second), emptyList()).shouldBeOk()
+        val layout = Layout(
+            nodes = mapOf(
+                second.id.node() to Rect(0.0, 0.0, 200.0, 72.0),
+                first.id.node() to Rect(1000.0, 400.0, 200.0, 72.0),
+            ),
+            edges = emptyList(),
+            generations = mapOf(first.id.node() to 1, second.id.node() to 0),
+            bounds = Rect(0.0, 0.0, 1200.0, 472.0),
+            mainPersonId = second.id.node(),
+        )
+        return TreeCanvasState(
+            layout = layout,
+            spatialIndex = SpatialIndex.build(layout),
+            viewport = Size(800.0, 600.0),
+            tree = tree,
+            searchAnchor = searchAnchor,
+        )
+    }
+
+    private fun cameraOn(state: TreeCanvasState, target: Person): Camera =
+        Camera(scale = Camera.DEFAULT_SCALE).center(state.layout.rectOf(target.id.node())!!, state.viewport)
+
+    private fun PersonId.node(): NodeId = NodeId(value.toString())
 }

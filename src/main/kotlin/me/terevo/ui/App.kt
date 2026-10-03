@@ -208,6 +208,7 @@ sealed interface AppAction {
     data class ChangeMediaPage(val delta: Int) : AppAction
     data object CloseMedia : AppAction
     data class SelectPerson(val id: me.terevo.domain.model.PersonId) : AppAction
+    data class SelectSearchResult(val id: me.terevo.domain.model.PersonId) : AppAction
     data class UpdatePersonForm(val form: PersonFormState) : AppAction
     data class UpdateRelationDialog(val dialog: RelationDialogState) : AppAction
     data class Canvas(val intent: TreeCanvasIntent) : AppAction
@@ -491,61 +492,14 @@ private fun MainTreeTab(state: AppState, onAction: (AppAction) -> Unit) {
             modifier = Modifier.fillMaxSize(),
         )
     } else {
-        Row(Modifier.fillMaxSize()) {
-            if (state.isProjectOpen) {
-                val sidebarWidth by animateDpAsState(
-                    targetValue = if (state.sidebarCollapsed) 0.dp else spacing.sidebarWidth,
-                    animationSpec = tween(SIDEBAR_ANIMATION_MS),
-                )
-                Box(
-                    Modifier
-                        .width(sidebarWidth)
-                        .fillMaxHeight()
-                        .background(colors.sidebar),
-                ) {
-                    if (sidebarWidth > 0.dp) {
-                        Box(
-                            Modifier
-                                .width(spacing.sidebarWidth)
-                                .fillMaxHeight()
-                                .padding(spacing.medium),
-                        ) {
-                            ProjectSidebar(state, onAction)
-                        }
-                    }
-                }
-            } else {
-                Box(
-                    Modifier
-                        .width(spacing.sidebarWidth)
-                        .fillMaxSize()
-                        .background(colors.sidebar)
-                        .padding(spacing.medium),
-                )
-            }
-            VerticalDivider()
+        Box(Modifier.fillMaxSize()) {
             Box(
                 modifier = Modifier
-                    .weight(1f)
                     .fillMaxSize()
-                    .background(colors.canvas),
+                    .background(colors.canvas)
+                    .padding(start = if (state.isProjectOpen) 0.dp else spacing.sidebarWidth),
                 contentAlignment = Alignment.Center,
             ) {
-                if (state.isProjectOpen) {
-                    IconButton(
-                        onClick = { onAction(AppAction.ToggleSidebar) },
-                        modifier = Modifier.align(Alignment.TopStart).padding(spacing.small),
-                    ) {
-                        Icon(
-                            if (state.sidebarCollapsed) {
-                                TablerIcons.ChevronRight
-                            } else {
-                                TablerIcons.ChevronLeft
-                            },
-                            contentDescription = if (state.sidebarCollapsed) Strings.EXPAND_SIDEBAR else Strings.COLLAPSE_SIDEBAR,
-                        )
-                    }
-                }
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(spacing.medium),
@@ -608,6 +562,52 @@ private fun MainTreeTab(state: AppState, onAction: (AppAction) -> Unit) {
                         )
                     }
                 }
+            }
+
+            if (state.isProjectOpen) {
+                val sidebarWidth by animateDpAsState(
+                    targetValue = if (state.sidebarCollapsed) 0.dp else spacing.sidebarWidth,
+                    animationSpec = tween(SIDEBAR_ANIMATION_MS),
+                )
+                Box(
+                    Modifier
+                        .width(sidebarWidth)
+                        .fillMaxHeight()
+                        .background(colors.sidebar),
+                ) {
+                    if (sidebarWidth > 0.dp) {
+                        Box(
+                            Modifier
+                                .width(spacing.sidebarWidth)
+                                .fillMaxHeight()
+                                .padding(spacing.medium),
+                        ) {
+                            ProjectSidebar(state, onAction)
+                        }
+                    }
+                }
+                IconButton(
+                    onClick = { onAction(AppAction.ToggleSidebar) },
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(start = sidebarWidth + spacing.small, top = spacing.small),
+                ) {
+                    Icon(
+                        if (state.sidebarCollapsed) {
+                            TablerIcons.ChevronRight
+                        } else {
+                            TablerIcons.ChevronLeft
+                        },
+                        contentDescription = if (state.sidebarCollapsed) Strings.EXPAND_SIDEBAR else Strings.COLLAPSE_SIDEBAR,
+                    )
+                }
+            } else {
+                Box(
+                    Modifier
+                        .width(spacing.sidebarWidth)
+                        .fillMaxHeight()
+                        .background(colors.sidebar),
+                )
             }
         }
     }
@@ -759,11 +759,20 @@ private fun ProjectSidebar(state: AppState, onAction: (AppAction) -> Unit) {
                     },
                     onSelect = { onAction(AppAction.ChangeSearchFilter(state.searchFilter.copy(hasDates = it))) },
                 )
+                if (!state.searchFilter.isEmpty()) {
+                    OutlinedButton(
+                        onClick = { onAction(AppAction.ChangeSearchFilter(PersonSearchFilter())) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(TablerIcons.FilterOff, contentDescription = null)
+                        Text(Strings.CLEAR_FILTERS, modifier = Modifier.padding(start = spacing.small))
+                    }
+                }
                 if (state.searchResults.isNotEmpty()) {
                     Text("${Strings.SEARCH_RESULTS}: ${state.searchResults.size}")
                     state.searchResults.forEach { result ->
                         OutlinedButton(
-                            onClick = { onAction(AppAction.SelectPerson(result.id)) },
+                            onClick = { onAction(AppAction.SelectSearchResult(result.id)) },
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text(result.name.display) }
                     }

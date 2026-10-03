@@ -42,6 +42,7 @@ object Strings {
     const val FILTER_HAS_DATES: String = "Есть даты"
     const val FILTER_NO_DATES: String = "Нет дат"
     const val FILTER_ANY: String = "Любой"
+    const val CLEAR_FILTERS: String = "Сбросить все фильтры"
     const val FIT_TO_SCREEN: String = "Вписать в экран"
     const val ACTUAL_SIZE: String = "100 %"
     const val CENTER_SELECTED: String = "К выбранному"

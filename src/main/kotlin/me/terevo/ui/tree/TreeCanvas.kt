@@ -140,6 +140,7 @@ fun TreeCanvas(
             val camera = animatedCamera.value
             val viewport = camera.visibleWorld(size.width.toDouble(), size.height.toDouble())
             drawDotGrid(camera, colors, viewport)
+            drawGenerationBands(state.layout, camera, colors, viewport)
             val visible = state.spatialIndex.visible(state.layout, viewport)
             val layout = state.layout.copy(nodes = visible.nodes, edges = visible.edges)
             drawTree(

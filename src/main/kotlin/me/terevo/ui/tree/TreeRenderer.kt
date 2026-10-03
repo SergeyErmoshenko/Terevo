@@ -3,6 +3,7 @@ package me.terevo.ui.tree
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -36,6 +37,56 @@ fun DrawScope.drawDotGrid(camera: Camera, colors: TerevoColors, viewport: Rect) 
         }
         worldY += spacing
     }
+}
+
+// Paints a tinted band behind each generation row so the levels of the tree read at a glance.
+fun DrawScope.drawGenerationBands(
+    layout: Layout,
+    camera: Camera,
+    colors: TerevoColors,
+    viewport: Rect,
+) {
+    generationBands(layout, viewport).forEach { (index, band) ->
+        drawRect(
+            color = generationBandColor(colors, index),
+            topLeft = camera.worldToScreen(Point(band.left, band.top)).toOffset(),
+            size = Size((band.width * camera.scale).toFloat(), (band.height * camera.scale).toFloat()),
+        )
+    }
+}
+
+// One band per generation, spanning the full viewport width rather than just the cards: the
+// strip exists to let the eye follow a bloodline across a wide tree, and a band that stopped at
+// the outermost card would break exactly where the tree is widest and the band is most useful.
+// Rows are measured from the actual card rectangles, so a generation that owns no visible cards
+// contributes no band instead of an empty one. The index is the row's position on screen, which
+// keeps the colour alternation stable no matter which generation the layout puts on top.
+internal fun generationBands(layout: Layout, viewport: Rect): List<Pair<Int, Rect>> {
+    if (layout.nodes.isEmpty()) return emptyList()
+    val rows = layout.generations.keys
+        .mapNotNull { generation -> layout.nodes[generation] }
+        .groupBy { it.top }
+        .values
+        .map { rects -> Rect.enclosing(rects) }
+        .sortedBy { it.top }
+
+    return rows.mapIndexed { index, row ->
+        index to Rect(left = viewport.left, top = row.top, width = viewport.width, height = row.height)
+    }
+}
+
+// Cycles through a small set of low-alpha washes derived from the theme, so alternating
+// generations stay distinguishable without competing with the cards drawn on top of them.
+private fun generationBandColor(colors: TerevoColors, index: Int): Color {
+    val palette = listOf(
+        colors.selection,
+        colors.accent,
+        colors.male,
+        colors.female,
+    )
+    val base = palette[index % palette.size]
+    val strength = if (index % 2 == 0) GENERATION_BAND_ALPHA_STRONG else GENERATION_BAND_ALPHA_SOFT
+    return base.copy(alpha = strength)
 }
 
 fun DrawScope.drawTree(
@@ -300,3 +351,5 @@ private const val DRAG_GHOST_ALPHA: Float = 0.4f
 private const val DRAG_GHOST_STROKE: Float = 2f
 private const val DRAG_RING_WIDTH: Float = 3f
 private const val DRAG_RING_INSET: Float = 4f
+private const val GENERATION_BAND_ALPHA_STRONG: Float = 0.13f
+private const val GENERATION_BAND_ALPHA_SOFT: Float = 0.07f
