@@ -1,14 +1,12 @@
 import org.gradle.internal.os.OperatingSystem
-import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.net.URI
 import java.security.MessageDigest
 
 plugins {
+    application
     alias(libs.plugins.kotlin.jvm)
-    alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
-    alias(libs.plugins.compose)
     alias(libs.plugins.sqldelight)
 }
 
@@ -80,15 +78,19 @@ kotlin {
     }
 }
 
-dependencies {
-    implementation(compose.desktop.currentOs)
-    implementation(compose.material3)
-    implementation(compose.materialIconsExtended)
-    implementation(libs.material.kolor)
-    implementation(libs.tabler.icons)
+configurations.all {
+    resolutionStrategy {
+        // Transitive-only artifact (konsist -> kotlin-stdlib-jdk8 -> kotlin-stdlib-jdk7); nothing
+        // in this project calls into it directly. Removing the Compose plugin changed conflict
+        // resolution enough that Gradle now wants exactly 2.0.21, which happens not to be cached
+        // here. Pin to the closest cached release instead of forcing a network fetch.
+        force("org.jetbrains.kotlin:kotlin-stdlib-jdk7:2.1.21")
+        force("org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.1.21")
+    }
+}
 
+dependencies {
     implementation(libs.bundles.kotlinx)
-    implementation(libs.kotlinx.coroutines.swing)
     implementation(libs.bundles.sqldelight)
     implementation(libs.pdfbox)
     implementation(libs.kotlin.logging)
@@ -109,57 +111,20 @@ sqldelight {
     }
 }
 
-compose.desktop {
-    application {
-        mainClass = "me.terevo.app.MainKt"
-        if (OperatingSystem.current().isMacOsX) {
-            jvmArgs += listOf(
-                "-Xdock:name=Terevo",
-                "-Xdock:icon=${rootProject.file("packaging/icons/icon.icns")}",
-                "-Dapple.awt.application.name=Terevo",
-            )
-        }
-        nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi)
-            packageName = "Terevo"
-            packageVersion = version.toString()
-            modules("java.instrument", "java.naming", "java.sql", "jdk.unsupported")
-            appResourcesRootDir.set(rootProject.file("packaging/resources"))
-            description = "Genealogy tree editor"
-            vendor = "Terevo"
-            fileAssociation(
-                mimeType = "application/x-terevo",
-                extension = "terevo",
-                description = "Terevo genealogy project",
-            )
-            windows {
-                iconFile.set(rootProject.file("packaging/icons/icon.ico"))
-                upgradeUuid = "5602797B-3D5F-4620-909A-B151F407894C"
-                menuGroup = "Terevo"
-                shortcut = true
-                dirChooser = true
-                perUserInstall = true
-            }
-            macOS {
-                iconFile.set(rootProject.file("packaging/icons/icon.icns"))
-                bundleID = "me.terevo.app"
-            }
-            linux {
-                iconFile.set(rootProject.file("packaging/icons/icon.png"))
-            }
-        }
-    }
+application {
+    mainClass = "me.terevo.server.ServerMainKt"
+    applicationName = "terevo-backend"
 }
 
-afterEvaluate {
-    tasks.named<Sync>("prepareAppResources") {
-        if (OperatingSystem.current().isWindows) {
-            dependsOn(graphvizWindows)
-            from(graphvizWindows) {
-                into("graphviz")
-            }
-        }
-    }
+// electron-builder stages this distribution as an extra resource for macOS and Windows.
+tasks.named("installDist") {
+    dependsOn(tasks.jar)
+}
+
+tasks.register("desktopDistribution") {
+    group = "distribution"
+    description = "Builds the Kotlin backend distribution used by the Electron desktop app."
+    dependsOn("installDist")
 }
 
 val sqliteNativeDir: File = layout.buildDirectory.dir("tmp/sqlite-native").get().asFile

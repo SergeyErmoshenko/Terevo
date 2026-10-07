@@ -1,6 +1,5 @@
 [versions]
 kotlin = "2.4.0"
-compose = "1.9.3"
 coroutines = "1.10.2"
 immutable = "0.4.0"
 serialization = "1.9.0"
@@ -13,12 +12,9 @@ pdfbox = "3.0.5"
 kotlinLogging = "7.0.7"
 logback = "1.5.18"
 junitPlatform = "1.13.4"
-materialKolor = "4.0.5"
-tablerIcons = "1.1.1"
 
 [libraries]
 kotlinx-coroutines = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
-kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "coroutines" }
 kotlinx-collections-immutable = { module = "org.jetbrains.kotlinx:kotlinx-collections-immutable", version.ref = "immutable" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "datetime" }
@@ -30,9 +26,6 @@ sqldelight-primitive-adapters = { module = "app.cash.sqldelight:primitive-adapte
 pdfbox = { module = "org.apache.pdfbox:pdfbox", version.ref = "pdfbox" }
 kotlin-logging = { module = "io.github.oshai:kotlin-logging-jvm", version.ref = "kotlinLogging" }
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
-
-material-kolor = { module = "com.materialkolor:material-kolor", version.ref = "materialKolor" }
-tabler-icons = { module = "br.com.devsrsouza.compose.icons:tabler-icons", version.ref = "tablerIcons" }
 
 konsist = { module = "com.lemonappdev:konsist", version.ref = "konsist" }
 kotest-property = { module = "io.kotest:kotest-property", version.ref = "kotest" }
@@ -48,7 +41,5 @@ testing = ["kotest-property", "kotest-assertions", "konsist", "turbine", "kotlin
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
-kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
-compose = { id = "org.jetbrains.compose", version.ref = "compose" }
 sqldelight = { id = "app.cash.sqldelight", version.ref = "sqldelight" }

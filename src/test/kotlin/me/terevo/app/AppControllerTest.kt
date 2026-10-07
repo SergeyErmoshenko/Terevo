@@ -167,7 +167,7 @@ class AppControllerTest {
         val opened = controller.openMedia(media.id)
         val zoomed = controller.changeMediaZoom(10f)
 
-        assertTrue(opened.mediaViewer?.content?.isEmpty() == true)
+        assertEquals(null, opened.mediaViewer?.imagePath)
         assertEquals(4f, zoomed.mediaViewer?.zoom)
         controller.closeMedia()
         val removed = controller.removeMedia(media.id)
@@ -392,54 +392,40 @@ class AppControllerTest {
     }
 
     @Test
-    fun `selection navigation centers camera and supports back and forward`() {
+    fun `selection navigation asks the view to center and supports back and forward`() {
         controller.create(locationOf("navigation"))
         val first = createPerson("Иванов", "Иван")
         val second = createPerson("Петров", "Пётр")
-        controller.updateCanvas(me.terevo.ui.tree.TreeCanvasIntent.Resize(me.terevo.layout.Size(800.0, 600.0)))
 
         controller.selectPerson(first)
+        val before = controller.state.canvas.centerRequest
         val secondState = controller.selectPerson(second)
-        val secondNode = me.terevo.layout.NodeId(second.value.toString())
-        val secondRect = assertNotNull(secondState.canvas.layout.rectOf(secondNode))
 
-        assertEquals(
-            secondState.canvas.camera.center(secondRect, secondState.canvas.viewport),
-            secondState.canvas.camera
-        )
+        assertEquals(me.terevo.layout.NodeId(second.value.toString()), secondState.canvas.centerOn)
+        assertTrue(secondState.canvas.centerRequest > before)
         assertEquals(first, controller.navigateBack().selectedPerson?.id)
         assertEquals(second, controller.navigateForward().selectedPerson?.id)
     }
 
     @Test
-    fun `adding a child keeps the camera put so the tree visibly makes room`() {
-        // Reported as "the tree did not move right after adding a person". The layout itself was
-        // correct - the neighbouring branch really did shift - but remapping re-fitted the camera to
-        // the new, wider bounds on every edit, zooming out by almost exactly the factor the tree had
-        // grown. The two cancelled out, so the view looked frozen while every card got smaller and
-        // started to read as cramped/overlapping. The camera must survive an edit untouched.
+    fun `adding a child never asks the view to center on anything but the selected parent`() {
+        // Reported as "the tree did not move right after adding a person": re-fitting the view on
+        // every edit zoomed out by exactly the factor the tree had grown, so the change looked
+        // frozen. There is no auto-refit left to regress, but centerOn must still track only
+        // deliberate selection (addChild below reselects the parent before adding, which is
+        // itself a legitimate center request) and never drift to the tree's new bounds or the
+        // freshly created child.
         controller.create(locationOf("camera-stays"))
         val parent = createPerson("Иванов", "Иван")
-        controller.updateCanvas(me.terevo.ui.tree.TreeCanvasIntent.Resize(me.terevo.layout.Size(800.0, 600.0)))
         controller.selectPerson(parent)
+        val parentNode = me.terevo.layout.NodeId(parent.value.toString())
 
-        // Zoom is the part that was cancelling out the layout's growth, so it must not change at
-        // all. Vertical panning is left out of this assertion on purpose: selecting the parent
-        // re-centers on it, and a first child adds a whole generation below, which legitimately
-        // moves the view down. What must never happen is the scale shrinking to swallow the new
-        // width, or the tree being re-anchored horizontally so the widening is invisible.
-        val before = controller.state.canvas.camera
         addChild(parent, "Иванов", "Пётр")
+        assertEquals(parentNode, controller.state.canvas.centerOn)
         val widthAfterFirst = controller.state.canvas.layout.bounds.width
-
-        assertEquals(before.scale, controller.state.canvas.camera.scale, "zoom must survive an edit")
-        assertEquals(before.offset.x, controller.state.canvas.camera.offset.x)
-
-        // A second child genuinely widens the tree; the camera still must not compensate for it.
         addChild(parent, "Иванов", "Сергей")
 
-        assertEquals(before.scale, controller.state.canvas.camera.scale)
-        assertEquals(before.offset.x, controller.state.canvas.camera.offset.x)
+        assertEquals(parentNode, controller.state.canvas.centerOn)
         assertTrue(
             controller.state.canvas.layout.bounds.width > widthAfterFirst,
             "the second child must actually widen the tree, otherwise this proves nothing",
@@ -448,23 +434,13 @@ class AppControllerTest {
     }
 
     @Test
-    fun `fit to screen resets zoom and centers on the first person added`() {
+    fun `home is the first person added`() {
         controller.create(locationOf("explicit-fit"))
         val parent = createPerson("Иванов", "Иван")
-        controller.updateCanvas(me.terevo.ui.tree.TreeCanvasIntent.Resize(me.terevo.layout.Size(800.0, 600.0)))
         controller.selectPerson(parent)
         repeat(3) { index -> addChild(parent, "Иванов", "Ребёнок$index") }
-        controller.updateCanvas(me.terevo.ui.tree.TreeCanvasIntent.Zoom(me.terevo.layout.Point(400.0, 300.0), 2.0))
 
-        val canvas = controller.updateCanvas(me.terevo.ui.tree.TreeCanvasIntent.FitToScreen).canvas
-        val mainPersonRect = assertNotNull(canvas.layout.rectOf(me.terevo.layout.NodeId(parent.value.toString())))
-
-        assertEquals(
-            me.terevo.ui.tree.Camera(scale = me.terevo.ui.tree.Camera.DEFAULT_SCALE)
-                .center(mainPersonRect, canvas.viewport),
-            canvas.camera,
-        )
-        assertEquals(me.terevo.ui.tree.Camera.DEFAULT_SCALE, canvas.camera.scale, "zoom must reset to default")
+        assertEquals(me.terevo.layout.NodeId(parent.value.toString()), controller.state.canvas.homePersonId)
     }
 
     @Test
@@ -472,19 +448,14 @@ class AppControllerTest {
         controller.create(locationOf("search-home"))
         val first = createPerson("Иванов", "Иван")
         val found = createPerson("Петров", "Пётр")
-        controller.updateCanvas(me.terevo.ui.tree.TreeCanvasIntent.Resize(me.terevo.layout.Size(800.0, 600.0)))
-        fun homeRect() = controller.updateCanvas(me.terevo.ui.tree.TreeCanvasIntent.FitToScreen).canvas.let {
-            it.layout.rectOf(assertNotNull(it.homePersonId))
-        }
-        fun rectOf(id: me.terevo.domain.model.PersonId) =
-            controller.state.canvas.layout.rectOf(me.terevo.layout.NodeId(id.value.toString()))
+        fun node(id: me.terevo.domain.model.PersonId) = me.terevo.layout.NodeId(id.value.toString())
 
         controller.changeSearchFilter(me.terevo.ui.person.PersonSearchFilter(query = "Петров"))
         controller.selectSearchResult(found)
-        assertEquals(rectOf(found), homeRect())
+        assertEquals(node(found), controller.state.canvas.homePersonId)
 
         controller.changeSearchFilter(me.terevo.ui.person.PersonSearchFilter())
-        assertEquals(rectOf(first), homeRect())
+        assertEquals(node(first), controller.state.canvas.homePersonId)
     }
 
     @Test

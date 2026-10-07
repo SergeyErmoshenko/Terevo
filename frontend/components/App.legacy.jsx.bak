@@ -1,0 +1,435 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+const emptyState = {
+  isProjectOpen: false,
+  projectName: "",
+  personCount: 0,
+  status: "Создайте или откройте проект",
+  canvas: { layout: null, selected: null, roles: {}, searchResults: [], layoutVersion: 0 },
+  searchResults: [],
+  selectedPerson: null,
+  canUndo: false,
+  canRedo: false,
+  themeMode: "SYSTEM",
+};
+
+function Icon({ name }) {
+  const common = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true };
+  const paths = {
+    tree: <><path d="M12 4v5M6 9h12M6 9v4m12-4v4M6 13H4m2 0h2m8 0h2m-2 0h2M4 13v5m4-5v5m8-5v5m4-5v5"/><circle cx="12" cy="4" r="1.5"/></>,
+    people: <><circle cx="9" cy="8" r="3"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0M16 5.5a3 3 0 0 1 0 5.8M17 15a5 5 0 0 1 3.5 4.8"/></>,
+    events: <><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 9h18M7 13h3m4 0h3m-10 4h3"/></>,
+    stats: <><path d="M4 20V10h4v10M10 20V4h4v16m2 0v-8h4v8M2 20h20"/></>,
+    search: <><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></>,
+    settings: <><circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1 1.2 1-1.4 2.4-1.5-.5a7 7 0 0 1-1.7 1l-.3 1.6h-2.8l-.3-1.6a7 7 0 0 1-1.7-1l-1.5.5-1.4-2.4 1.2-1a7 7 0 0 1 0-2l-1.2-1 1.4-2.4 1.5.5a7 7 0 0 1 1.7-1l.3-1.6h2.8l.3 1.6a7 7 0 0 1 1.7 1l1.5-.5 1.4 2.4-1.2 1a7 7 0 0 1 0 2Z" transform="translate(-1 -1)"/></>,
+    undo: <><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-2"/></>,
+    redo: <><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h2"/></>,
+    back: <><path d="m15 18-6-6 6-6"/></>,
+    forward: <><path d="m9 18 6-6-6-6"/></>,
+    fit: <><path d="M8 3H5a2 2 0 0 0-2 2v3m13-5h3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3m13-5v3a2 2 0 0 1-2 2h-3"/></>,
+    plus: <><path d="M12 5v14M5 12h14"/></>,
+    minus: <path d="M5 12h14"/>,
+  };
+  return <svg {...common}>{paths[name]}</svg>;
+}
+
+function IconButton({ label, children, ...props }) {
+  return <button className="icon-button" type="button" title={label} aria-label={label} {...props}>{children}</button>;
+}
+
+function TreeCanvas({ canvas, onSelect }) {
+  const element = useRef(null);
+  const frame = useRef({ scale: 1, x: 0, y: 0 });
+  const interaction = useRef({ pointer: null, startX: 0, startY: 0, moved: false });
+  const [zoomLabel, setZoomLabel] = useState("100%");
+
+  const draw = useCallback(() => {
+    const canvasElement = element.current;
+    const layout = canvas?.layout;
+    if (!canvasElement || !layout) return;
+    const bounds = canvasElement.getBoundingClientRect();
+    const pixelRatio = window.devicePixelRatio || 1;
+    const width = Math.max(1, Math.round(bounds.width * pixelRatio));
+    const height = Math.max(1, Math.round(bounds.height * pixelRatio));
+    if (canvasElement.width !== width || canvasElement.height !== height) {
+      canvasElement.width = width;
+      canvasElement.height = height;
+    }
+    const context = canvasElement.getContext("2d");
+    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    context.clearRect(0, 0, bounds.width, bounds.height);
+    const view = frame.current;
+    const contentWidth = Math.max(1, layout.maxX - layout.minX);
+    const contentHeight = Math.max(1, layout.maxY - layout.minY);
+    if (!view.fitted || view.version !== canvas.layoutVersion) {
+      const scale = Math.max(0.1, Math.min((bounds.width - 90) / contentWidth, (bounds.height - 90) / contentHeight, 1.25));
+      view.scale = scale;
+      view.x = (bounds.width - contentWidth * scale) / 2 - layout.minX * scale;
+      view.y = (bounds.height - contentHeight * scale) / 2 - layout.minY * scale;
+      view.fitted = true;
+      view.version = canvas.layoutVersion;
+    }
+    context.save();
+    context.translate(view.x, view.y);
+    context.scale(view.scale, view.scale);
+    for (const edge of layout.edges ?? []) {
+      const points = edge.points ?? [];
+      if (points.length < 4) continue;
+      context.beginPath();
+      context.moveTo(points[0], points[1]);
+      for (let index = 2; index < points.length; index += 2) context.lineTo(points[index], points[index + 1]);
+      context.strokeStyle = edge.union ? "#c69b56" : "#68777d";
+      context.lineWidth = (edge.union ? 1.8 : 1.3) / view.scale;
+      context.stroke();
+    }
+    for (const node of layout.nodes ?? []) {
+      const visual = layout.visuals?.[node.id] ?? {};
+      const selected = canvas.selected === node.id;
+      const role = canvas.roles?.[node.id];
+      const color = visual.gender === "MALE" ? ["#263f4a", "#64a5b2"] : visual.gender === "FEMALE" ? ["#493443", "#c07993"] : ["#383d40", "#929b9d"];
+      context.beginPath();
+      context.roundRect(node.x, node.y, node.width, node.height, 7);
+      context.fillStyle = selected ? "#30473e" : color[0];
+      context.strokeStyle = selected || role ? "#5ac293" : color[1];
+      context.lineWidth = (selected || role ? 2 : 1) / view.scale;
+      context.fill();
+      context.stroke();
+      const lines = visual.nameLines?.length ? visual.nameLines : [node.id];
+      const lineHeight = 17 / view.scale;
+      const textHeight = (lines.length + (visual.lifeYears ? 1 : 0)) * lineHeight;
+      let y = node.y + (node.height - textHeight) / 2 + lineHeight / 2;
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.font = `600 ${13 / view.scale}px Inter, sans-serif`;
+      context.fillStyle = "#f1f3f3";
+      for (const line of lines) {
+        context.fillText(line, node.x + node.width / 2, y, node.width - 18);
+        y += lineHeight;
+      }
+      if (visual.lifeYears) {
+        context.font = `400 ${11 / view.scale}px Inter, sans-serif`;
+        context.fillStyle = "#aab6b7";
+        context.fillText(visual.lifeYears, node.x + node.width / 2, y, node.width - 18);
+      }
+    }
+    context.restore();
+    setZoomLabel(`${Math.round(view.scale * 100)}%`);
+  }, [canvas]);
+
+  useEffect(() => {
+    draw();
+    const observer = new ResizeObserver(draw);
+    if (element.current) observer.observe(element.current);
+    return () => observer.disconnect();
+  }, [draw]);
+
+  const zoomAt = (x, y, factor) => {
+    const view = frame.current;
+    const next = Math.max(0.1, Math.min(3, view.scale * factor));
+    const ratio = next / view.scale;
+    view.x = x - (x - view.x) * ratio;
+    view.y = y - (y - view.y) * ratio;
+    view.scale = next;
+    draw();
+  };
+
+  const handlePointerDown = (event) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    interaction.current = { pointer: event.pointerId, startX: event.clientX, startY: event.clientY, moved: false };
+  };
+  const handlePointerMove = (event) => {
+    const drag = interaction.current;
+    if (drag.pointer !== event.pointerId) return;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    if (Math.abs(dx) + Math.abs(dy) > 2) drag.moved = true;
+    if (drag.moved) {
+      frame.current.x += dx;
+      frame.current.y += dy;
+      drag.startX = event.clientX;
+      drag.startY = event.clientY;
+      draw();
+    }
+  };
+  const handlePointerUp = (event) => {
+    const drag = interaction.current;
+    if (drag.pointer !== event.pointerId) return;
+    if (!drag.moved) {
+      const bounds = element.current.getBoundingClientRect();
+      const x = (event.clientX - bounds.left - frame.current.x) / frame.current.scale;
+      const y = (event.clientY - bounds.top - frame.current.y) / frame.current.scale;
+      const node = canvas.layout?.nodes?.find((candidate) => x >= candidate.x && x <= candidate.x + candidate.width && y >= candidate.y && y <= candidate.y + candidate.height);
+      if (node) onSelect(node.id);
+    }
+    interaction.current.pointer = null;
+  };
+
+  return <div className="tree-stage">
+    <canvas ref={element} className="tree-canvas" aria-label="Семейное древо" onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onWheel={(event) => {
+      event.preventDefault();
+      const bounds = element.current.getBoundingClientRect();
+      zoomAt(event.clientX - bounds.left, event.clientY - bounds.top, event.deltaY < 0 ? 1.1 : 1 / 1.1);
+    }} />
+    <div className="canvas-controls">
+      <IconButton label="Уменьшить" onClick={() => zoomAt(element.current.clientWidth / 2, element.current.clientHeight / 2, 1 / 1.15)}><Icon name="minus" /></IconButton>
+      <span>{zoomLabel}</span>
+      <IconButton label="Увеличить" onClick={() => zoomAt(element.current.clientWidth / 2, element.current.clientHeight / 2, 1.15)}><Icon name="plus" /></IconButton>
+      <span className="control-divider" />
+      <IconButton label="Уместить на экране" onClick={() => { frame.current.fitted = false; draw(); }}><Icon name="fit" /></IconButton>
+    </div>
+  </div>;
+}
+
+function PersonDetails({ state, dispatch }) {
+  const person = state.selectedPerson;
+  if (!person) return <div className="inspector-empty">{state.isProjectOpen ? "Выберите человека на древе" : ""}</div>;
+  return <div className="person-details">
+    <div className={`person-avatar gender-${person.gender.toLowerCase()}`}>{person.name?.trim()?.[0] ?? "?"}</div>
+    <h3>{person.name}</h3>
+    <p className="person-years">{person.lifeSpan || "Даты жизни не указаны"}</p>
+    {person.maidenName && <Detail label="Фамилия при рождении" value={person.maidenName} />}
+    {person.birthPlace && <Detail label="Место рождения" value={person.birthPlace} />}
+    {person.deathPlace && <Detail label="Место смерти" value={person.deathPlace} />}
+    {person.residence && <Detail label="Место жительства" value={person.residence} />}
+    {person.occupation && <Detail label="Род занятий" value={person.occupation} />}
+    {person.notes && <Detail label="Заметки" value={person.notes} />}
+    <div className="person-actions">
+      <button className="secondary-button" onClick={() => dispatch({ type: "editPerson", id: person.id })}>Изменить</button>
+      <button className="secondary-button danger-button" onClick={() => {
+        if (window.confirm(`Удалить человека «${person.name}»?`)) dispatch({ type: "deletePerson", id: person.id });
+      }}>Удалить</button>
+    </div>
+  </div>;
+}
+
+function Detail({ label, value }) {
+  return <div className="detail-row"><span>{label}</span><p>{value}</p></div>;
+}
+
+function PersonForm({ form, dispatch, busy }) {
+  const [fields, setFields] = useState(form.fields);
+  useEffect(() => setFields(form.fields), [form]);
+  const change = (key, value) => setFields((current) => ({ ...current, [key]: value }));
+  const submit = async (event) => {
+    event.preventDefault();
+    const response = await dispatch({ type: "updatePersonForm", fields });
+    if (response?.state?.personForm?.canSave) dispatch({ type: "savePerson" });
+  };
+  return <div className="modal-backdrop" role="presentation">
+    <form className="dialog person-form" onSubmit={submit}>
+      <header className="dialog-header"><div><span className="eyebrow">{form.isNew ? "НОВАЯ ЗАПИСЬ" : "ПРОФИЛЬ ЧЕЛОВЕКА"}</span><h2>{form.isNew ? "Добавить человека" : "Изменить данные"}</h2></div><button className="dialog-close" type="button" aria-label="Закрыть" onClick={() => dispatch({ type: "cancelPerson" })}>×</button></header>
+      <div className="form-grid">
+        <label>Фамилия<input autoFocus value={fields.surname} onChange={(e) => change("surname", e.target.value)} /></label>
+        <label>Имя<input value={fields.givenName} onChange={(e) => change("givenName", e.target.value)} /></label>
+        <label>Отчество<input value={fields.patronymic} onChange={(e) => change("patronymic", e.target.value)} /></label>
+        <label>Фамилия при рождении<input value={fields.maidenName} onChange={(e) => change("maidenName", e.target.value)} /></label>
+        <label>Пол<select value={fields.gender} onChange={(e) => change("gender", e.target.value)}><option value="UNKNOWN">Не указан</option><option value="MALE">Мужской</option><option value="FEMALE">Женский</option></select></label>
+        <label>Дата рождения<input placeholder="ДД.ММ.ГГГГ" value={fields.birth.value} onChange={(e) => change("birth", { ...fields.birth, mode: e.target.value ? "EXACT" : "UNKNOWN", value: e.target.value })} /></label>
+        <label>Место рождения<input value={fields.birthPlace} onChange={(e) => change("birthPlace", e.target.value)} /></label>
+        {!fields.isAlive && <label>Дата смерти<input placeholder="ДД.ММ.ГГГГ" value={fields.death.value} onChange={(e) => change("death", { ...fields.death, mode: e.target.value ? "EXACT" : "UNKNOWN", value: e.target.value })} /></label>}
+        <label className="form-check form-wide"><input type="checkbox" checked={fields.isAlive} onChange={(e) => change("isAlive", e.target.checked)} />Жив(а)</label>
+        <label>Место жительства<input value={fields.residence} onChange={(e) => change("residence", e.target.value)} /></label>
+        <label className="form-wide">Род занятий<input value={fields.occupation} onChange={(e) => change("occupation", e.target.value)} /></label>
+        <label className="form-wide">Заметки<textarea rows="3" value={fields.notes} onChange={(e) => change("notes", e.target.value)} /></label>
+      </div>
+      {(form.blockingError || form.warnings?.length > 0) && <div className="form-feedback">{form.blockingError || form.warnings.join(" · ")}</div>}
+      <footer className="dialog-footer"><button className="secondary-button" type="button" onClick={() => dispatch({ type: "cancelPerson" })}>Отмена</button><button className="primary-button" disabled={!form.canSave || busy}>{busy ? "Сохранение…" : "Сохранить"}</button></footer>
+    </form>
+  </div>;
+}
+
+function RelationDialog({ dialog, dispatch, busy }) {
+  const [fields, setFields] = useState(dialog.fields);
+  useEffect(() => setFields(dialog.fields), [dialog]);
+  const update = (values) => setFields((current) => ({ ...current, ...values }));
+  const save = async () => {
+    await dispatch({ type: "updateRelationDialog", fields });
+    dispatch({ type: "saveRelation" });
+  };
+  const mode = dialog.mode;
+  const title = mode === "PARENT" ? "Добавить родителя" : mode === "CHILD" ? "Добавить ребёнка" : "Добавить супруга";
+  return <div className="modal-backdrop"><section className="dialog relation-dialog"><header className="dialog-header"><div><span className="eyebrow">СВЯЗЬ В ДРЕВЕ</span><h2>{title}</h2><p>Для: {dialog.source.name}</p></div><button className="dialog-close" aria-label="Закрыть" onClick={() => dispatch({ type: "cancelRelation" })}>×</button></header>
+    <label className="relation-search">Поиск человека<input autoFocus value={fields.query} onChange={(event) => update({ query: event.target.value })} /></label>
+    <div className="candidate-list">{dialog.people.map((person) => <button className={`candidate-row ${fields.selected === person.id ? "selected" : ""}`} key={person.id} onClick={() => update({ selected: person.id })}><span><strong>{person.name}</strong><small>{person.lifeYears}</small></span><span className="radio-mark">{fields.selected === person.id ? "●" : "○"}</span></button>)}{dialog.people.length === 0 && <div className="table-empty">Подходящие люди не найдены</div>}</div>
+    {mode === "PARENT" && <label className="relation-search">Тип родства<select value={fields.parentKind} onChange={(event) => update({ parentKind: event.target.value })}><option value="BIOLOGICAL">Биологический</option><option value="ADOPTIVE">Усыновитель</option><option value="STEP">Отчим или мачеха</option><option value="FOSTER">Опекун</option></select></label>}
+    {mode === "SPOUSE" && <div className="relation-extras"><label>Статус брака<select value={fields.marriageStatus} onChange={(event) => update({ marriageStatus: event.target.value })}><option value="MARRIED">В браке</option><option value="DIVORCED">Разведены</option><option value="WIDOWED">Вдовство</option><option value="PARTNERS">Партнёры</option></select></label><label>Место брака<input value={fields.marriagePlace} onChange={(event) => update({ marriagePlace: event.target.value })} /></label></div>}
+    {mode === "CHILD" && dialog.secondParentCandidates.length > 0 && <label className="relation-search">Второй родитель<select value={fields.secondParent ?? ""} onChange={(event) => update({ secondParent: event.target.value || null })}><option value="">Не указан</option>{dialog.secondParentCandidates.map((person) => <option value={person.id} key={person.id}>{person.name}</option>)}</select></label>}
+    {(dialog.error || !fields.selected) && <div className="form-feedback">{dialog.error || "Выберите человека из списка"}</div>}
+    <footer className="dialog-footer"><button className="secondary-button" onClick={() => dispatch({ type: "cancelRelation" })}>Отмена</button><button className="primary-button" disabled={!fields.selected || busy} onClick={save}>Добавить связь</button></footer>
+  </section></div>;
+}
+
+function EventForm({ form, dispatch, busy }) {
+  const [fields, setFields] = useState(form.fields);
+  useEffect(() => setFields(form.fields), [form]);
+  const update = (values) => setFields((current) => ({ ...current, ...values }));
+  const save = async (event) => {
+    event.preventDefault();
+    const response = await dispatch({ type: "updateEventForm", fields });
+    if (response?.state?.eventForm?.canSave) dispatch({ type: "saveEvent" });
+  };
+  return <div className="modal-backdrop"><form className="dialog" onSubmit={save}><header className="dialog-header"><div><span className="eyebrow">ХРОНОЛОГИЯ СЕМЬИ</span><h2>{form.isNew ? "Новое событие" : "Изменить событие"}</h2></div><button className="dialog-close" type="button" aria-label="Закрыть" onClick={() => dispatch({ type: "cancelEvent" })}>×</button></header><div className="form-grid"><label className="form-wide">Название события<input autoFocus value={fields.type} onChange={(event) => update({ type: event.target.value })} /></label><label>Дата<input placeholder="ДД.ММ.ГГГГ" value={fields.date.value} onChange={(event) => update({ date: { ...fields.date, mode: event.target.value ? "EXACT" : "UNKNOWN", value: event.target.value } })} /></label><label>Место<input value={fields.place} onChange={(event) => update({ place: event.target.value })} /></label><label className="form-wide">Заметки<textarea rows="3" value={fields.notes} onChange={(event) => update({ notes: event.target.value })} /></label></div>{form.blockingError && <div className="form-feedback">{form.blockingError}</div>}<footer className="dialog-footer"><button className="secondary-button" type="button" onClick={() => dispatch({ type: "cancelEvent" })}>Отмена</button><button className="primary-button" disabled={!form.canSave || busy}>Сохранить</button></footer></form></div>;
+}
+
+function DiscardDialog({ dispatch }) {
+  return <div className="modal-backdrop"><section className="dialog discard-dialog"><h2>Отменить изменения?</h2><p>Введённые данные не будут сохранены.</p><footer className="dialog-footer"><button className="secondary-button" onClick={() => dispatch({ type: "keepEditingPerson" })}>Продолжить редактирование</button><button className="primary-button" onClick={() => dispatch({ type: "confirmDiscardPerson" })}>Отменить изменения</button></footer></section></div>;
+}
+
+function GedcomPreviewDialog({ preview, dispatch, busy }) {
+  return <div className="modal-backdrop"><section className="dialog gedcom-dialog"><header className="dialog-header"><div><span className="eyebrow">ИМПОРТ GEDCOM</span><h2>Проверка файла завершена</h2></div><button className="dialog-close" aria-label="Закрыть" onClick={() => dispatch({ type: "cancelGedcomImport" })}>×</button></header><div className="gedcom-summary"><Stat label="Людей" value={preview.people} /><Stat label="Семей" value={preview.families} /></div>{preview.skippedTags?.length > 0 && <div className="gedcom-skipped"><span>Нераспознанные теги</span><p>{preview.skippedTags.join(", ")}</p></div>}{preview.error && <div className="form-feedback">{preview.error}</div>}<footer className="dialog-footer"><button className="secondary-button" onClick={() => dispatch({ type: "cancelGedcomImport" })}>Отмена</button><button className="primary-button" disabled={busy} onClick={() => dispatch({ type: "confirmGedcomImport" })}>{busy ? "Импорт…" : "Импортировать"}</button></footer></section></div>;
+}
+
+function ProjectNameDialog({ title, submitLabel, onSubmit, onCancel, busy }) {
+  const [name, setName] = useState("");
+  return <div className="modal-backdrop"><form className="dialog project-dialog" onSubmit={(event) => { event.preventDefault(); if (name.trim()) onSubmit(name.trim()); }}><header className="dialog-header"><div><span className="eyebrow">ПРОЕКТ</span><h2>{title}</h2></div><button className="dialog-close" type="button" aria-label="Закрыть" onClick={onCancel}>×</button></header><label className="project-name-field">Название проекта<input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="Например: Семья Ивановых" /></label><footer className="dialog-footer"><button className="secondary-button" type="button" onClick={onCancel}>Отмена</button><button className="primary-button" disabled={!name.trim() || busy}>{submitLabel}</button></footer></form></div>;
+}
+
+function App() {
+  const [state, setState] = useState(emptyState);
+  const [error, setError] = useState("");
+  const [projectDialog, setProjectDialog] = useState(null);
+  const [query, setQuery] = useState("");
+  const [busy, setBusy] = useState(false);
+  const localId = useRef(0);
+
+  const dispatch = useCallback(async (action) => {
+    if (!window.terevo?.dispatch) {
+      setError("Откройте приложение через Electron, чтобы подключиться к базе проекта.");
+      return null;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const response = await window.terevo.dispatch({ ...action, id: ++localId.current });
+      if (response?.state) setState(response.state);
+      if (response?.error) setError(response.error);
+      if (!response?.state && !response?.error && response !== null) setError(`Нет ответа от приложения для действия: ${action.type}`);
+      return response;
+    } catch (cause) {
+      setError(cause.message || "Не удалось выполнить действие");
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    window.terevo?.start().then((response) => {
+      if (!active) return;
+      if (response?.state) setState(response.state);
+    }).catch((cause) => {
+      if (!active) return;
+      setError(cause.message);
+    });
+    return () => { active = false; };
+  }, []);
+
+  const matches = useMemo(() => {
+    const value = query.trim().toLocaleLowerCase("ru");
+    if (!value) return [];
+    return (state.searchResults ?? []).filter((person) => person.name.toLocaleLowerCase("ru").includes(value)).slice(0, 8);
+  }, [query, state.searchResults]);
+
+  const createProject = () => setProjectDialog("create");
+  const importGedcom = () => setProjectDialog("gedcom");
+  const submitProjectDialog = async (name) => {
+    const action = projectDialog === "gedcom" ? { type: "importGedcomDialog", name } : { type: "createProject", name };
+    const response = await dispatch(action);
+    if ((response?.state?.isProjectOpen || response?.state?.gedcomPreview) && !response.error) setProjectDialog(null);
+  };
+  const visibleStatus = state.status && state.status !== "Проект не открыт" && state.status !== "Создайте или откройте проект";
+  const openSearchResult = async (id) => {
+    setQuery("");
+    await dispatch({ type: "selectSearchResult", id });
+  };
+
+  return <div className="app-shell theme-dark">
+    <header className="topbar">
+      <a className="brand" href="#" onClick={(event) => event.preventDefault()}><span className="brand-mark">T</span><span>Terevo</span></a>
+      <div className="topbar-actions">
+        <IconButton label="Отменить" disabled={!state.canUndo} onClick={() => dispatch({ type: "undo" })}><Icon name="undo" /></IconButton>
+        <IconButton label="Повторить" disabled={!state.canRedo} onClick={() => dispatch({ type: "redo" })}><Icon name="redo" /></IconButton>
+        <span className="toolbar-divider" />
+        {state.isProjectOpen && <span className="project-name">{state.projectName}</span>}
+        <button className="primary-button" onClick={createProject}>Новый проект</button>
+        <button className="secondary-button" onClick={() => dispatch({ type: "openProjectDialog" })}>Открыть проект</button>
+        <button className="secondary-button import-button" onClick={importGedcom}>Импорт .ged</button>
+        <button className="menu-button" aria-label="Меню" onClick={() => document.querySelector(".app-menu")?.classList.toggle("menu-open")}>⋯</button>
+        <div className="app-menu"><button onClick={importGedcom}>Импорт GEDCOM</button><button onClick={() => dispatch({ type: "exportGedcomDialog" })}>Экспорт GEDCOM</button><button onClick={() => dispatch({ type: "exportPdfDialog" })}>Экспорт PDF</button><button onClick={() => dispatch({ type: "openStatistics" })}>Статистика</button><button onClick={() => dispatch({ type: "changeThemeMode", mode: state.themeMode === "DARK" ? "LIGHT" : "DARK" })}>{state.themeMode === "DARK" ? "Светлая тема" : "Тёмная тема"}</button></div>
+      </div>
+    </header>
+    <div className="workspace">
+      <aside className="sidebar">
+        <nav className="nav-list" aria-label="Разделы проекта">
+          <NavItem icon="tree" label="Древо" active={state.mainTab === "TREE"} onClick={() => dispatch({ type: "changeMainTab", tab: "TREE" })} />
+          <NavItem icon="people" label="Люди" active={state.mainTab === "PERSONS"} onClick={() => dispatch({ type: "changeMainTab", tab: "PERSONS" })} />
+          <NavItem icon="events" label="События" active={state.mainTab === "EVENTS"} onClick={() => dispatch({ type: "changeMainTab", tab: "EVENTS" })} />
+        </nav>
+        <div className="sidebar-footer">
+          <button className="nav-item" onClick={() => dispatch({ type: "openStatistics" })}><span className="nav-icon"><Icon name="stats" /></span><span>Статистика</span></button>
+        </div>
+      </aside>
+      <main className="main-area">
+        <section className="toolbar">
+          <div className="toolbar-group"><IconButton label="Назад" disabled={!state.canGoBack} onClick={() => dispatch({ type: "navigateBack" })}><Icon name="back" /></IconButton><IconButton label="Вперёд" disabled={!state.canGoForward} onClick={() => dispatch({ type: "navigateForward" })}><Icon name="forward" /></IconButton></div>
+          <span className="toolbar-divider" />
+          <div className="search-wrap"><label className="search-field"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Найти человека" aria-label="Найти человека" />{query && <button className="search-clear" aria-label="Очистить поиск" onClick={() => setQuery("")}>×</button>}</label>
+            {matches.length > 0 && <div className="search-results">{matches.map((person) => <button key={person.id} onClick={() => openSearchResult(person.id)}><span>{person.name}</span><small>{person.lifeYears}</small></button>)}</div>}
+          </div>
+          {state.mainTab === "TREE" && <>
+            <select value={state.layoutMode} aria-label="Режим древа" onChange={(event) => dispatch({ type: "changeLayoutMode", mode: event.target.value })}><option value="WHOLE_FAMILY">Вся семья</option><option value="ANCESTORS">Предки</option><option value="DESCENDANTS">Потомки</option></select>
+            <select value={state.layoutDirection} aria-label="Направление древа" onChange={(event) => dispatch({ type: "changeLayoutDirection", direction: event.target.value })}><option value="TOP_DOWN">Сверху вниз</option><option value="LEFT_RIGHT">Слева направо</option></select>
+          </>}
+          <span className="toolbar-spacer" />
+          <IconButton label="Настройки" onClick={() => dispatch({ type: "changeThemeMode", mode: state.themeMode === "DARK" ? "LIGHT" : "DARK" })}><Icon name="settings" /></IconButton>
+        </section>
+        {(error || visibleStatus) && <div className={error ? "toast-error" : "toast-status"} role={error ? "alert" : "status"}><span>{error || state.status}</span>{error && <button aria-label="Закрыть сообщение" onClick={() => setError("")}>×</button>}</div>}
+        <section className="tree-workspace">
+          {state.mainTab === "TREE" && (state.canvas?.layout?.nodes?.length
+            ? <TreeCanvas canvas={state.canvas} onSelect={(id) => dispatch({ type: "selectOnCanvas", id })} />
+            : <div className="empty-state minimal"><div className="empty-actions"><button className="primary-button" onClick={state.isProjectOpen ? () => dispatch({ type: "addPerson" }) : createProject}>{state.isProjectOpen ? "Добавить человека" : "Создать проект"}</button>{!state.isProjectOpen && <button className="secondary-button" onClick={importGedcom}>Импорт .ged</button>}</div></div>)}
+          {state.mainTab === "PERSONS" && <PeopleTable state={state} dispatch={dispatch} />}
+          {state.mainTab === "EVENTS" && <EventsTable state={state} dispatch={dispatch} />}
+          {state.statistics && <StatisticsDialog statistics={state.statistics} dispatch={dispatch} />}
+        </section>
+        <footer className="statusbar"><span>{visibleStatus ? state.status : ""}</span><span>{state.personCount} {state.personCount === 1 ? "человек" : "человек"}</span></footer>
+      </main>
+      <aside className="inspector">
+        <div className="inspector-heading"><h2>Сведения</h2><IconButton label="Свернуть панель" onClick={() => dispatch({ type: "toggleSidebar" })}>×</IconButton></div>
+        <PersonDetails state={state} dispatch={dispatch} />
+        <div className="inspector-bottom"><button className="primary-button full-width" disabled={!state.isProjectOpen} onClick={() => dispatch({ type: "addPerson" })}><Icon name="plus" />Добавить человека</button>
+          {state.selectedPerson && <div className="relation-actions"><button className="secondary-button" onClick={() => dispatch({ type: "addRelative", mode: "PARENT" })}>Добавить родителя</button><button className="secondary-button" onClick={() => dispatch({ type: "addRelative", mode: "CHILD" })}>Добавить ребёнка</button><button className="secondary-button" onClick={() => dispatch({ type: "addRelative", mode: "SPOUSE" })}>Добавить супруга</button></div>}
+        </div>
+      </aside>
+    </div>
+    {state.personForm && <PersonForm key={`${state.personForm.isNew}-${state.selectedPerson?.id ?? "new"}`} form={state.personForm} dispatch={dispatch} busy={busy} />}
+    {state.relationDialog && <RelationDialog key={`relation-${state.relationDialog.mode}-${state.relationDialog.source.id}`} dialog={state.relationDialog} dispatch={dispatch} busy={busy} />}
+    {state.eventForm && <EventForm key={`event-${state.eventForm.isNew}-${state.eventForm.fields.type}`} form={state.eventForm} dispatch={dispatch} busy={busy} />}
+    {state.gedcomPreview && <GedcomPreviewDialog preview={state.gedcomPreview} dispatch={dispatch} busy={busy} />}
+    {projectDialog && <ProjectNameDialog title={projectDialog === "gedcom" ? "Импорт GEDCOM" : "Новый проект"} submitLabel={projectDialog === "gedcom" ? "Выбрать .ged" : "Создать"} onSubmit={submitProjectDialog} onCancel={() => setProjectDialog(null)} busy={busy} />}
+    {state.personForm?.isDiscardConfirmationVisible && <DiscardDialog dispatch={dispatch} />}
+  </div>;
+}
+
+function NavItem({ icon, label, active, onClick }) {
+  return <button className={`nav-item ${active ? "active" : ""}`} onClick={onClick}><span className="nav-icon"><Icon name={icon} /></span><span>{label}</span></button>;
+}
+
+function PeopleTable({ state, dispatch }) {
+  const rows = state.personRows ?? [];
+  return <section className="data-view"><header className="data-heading"><div><span className="eyebrow">СПРАВОЧНИК</span><h1>Люди <span>{rows.length}</span></h1></div><button className="primary-button" disabled={!state.isProjectOpen} onClick={() => dispatch({ type: "addPerson" })}><Icon name="plus" />Добавить</button></header><div className="table-scroll"><table><thead><tr><th>Имя</th><th>Рождение</th><th>Место жительства</th><th>Род занятий</th><th>Статус</th></tr></thead><tbody>{rows.map((person) => <tr key={person.id} onClick={() => dispatch({ type: "selectPerson", id: person.id })}><td><strong>{person.fullName}</strong></td><td>{person.birthDate || "—"}</td><td>{person.residence || "—"}</td><td>{person.occupation || "—"}</td><td>{person.alive ? "Жив" : "Умер"}</td></tr>)}</tbody></table>{rows.length === 0 && <div className="table-empty">В проекте пока нет людей</div>}</div></section>;
+}
+
+function EventsTable({ state, dispatch }) {
+  const rows = state.eventRows ?? [];
+  return <section className="data-view"><header className="data-heading"><div><span className="eyebrow">ХРОНОЛОГИЯ СЕМЬИ</span><h1>События <span>{rows.length}</span></h1></div><button className="primary-button" disabled={!state.isProjectOpen} onClick={() => dispatch({ type: "addEvent" })}><Icon name="plus" />Добавить событие</button></header><div className="table-scroll"><table><thead><tr><th>Событие</th><th>Участники</th><th>Дата</th><th>Место</th><th /></tr></thead><tbody>{rows.map((event, index) => <tr key={event.id ?? index}><td><strong>{event.type}</strong></td><td>{event.participants}</td><td>{event.date || "—"}</td><td>{event.place || "—"}</td><td>{event.id && <button className="table-action" onClick={() => dispatch({ type: "editEvent", id: event.id })}>Изменить</button>}</td></tr>)}</tbody></table>{rows.length === 0 && <div className="table-empty">В проекте пока нет событий</div>}</div></section>;
+}
+
+function StatisticsDialog({ statistics, dispatch }) {
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) dispatch({ type: "closeStatistics" }); }}><section className="dialog statistics-dialog"><header className="dialog-header"><div><span className="eyebrow">ОБЗОР ПРОЕКТА</span><h2>Статистика</h2></div><button className="dialog-close" aria-label="Закрыть" onClick={() => dispatch({ type: "closeStatistics" })}>×</button></header><div className="stats-grid"><Stat label="Всего людей" value={statistics.totalPersons} /><Stat label="Живы" value={statistics.livingCount} /><Stat label="Умерли" value={statistics.deceasedCount} /><Stat label="Средняя продолжительность жизни" value={statistics.averageLifespanYears == null ? "—" : `${statistics.averageLifespanYears.toFixed(1)} лет`} /><Stat label="Не указана дата рождения" value={statistics.missingBirthDateCount} /><Stat label="Не указаны родители" value={statistics.missingParentsCount} /></div><footer className="dialog-footer"><button className="secondary-button" onClick={() => dispatch({ type: "closeStatistics" })}>Закрыть</button></footer></section></div>;
+}
+
+function Stat({ label, value }) { return <div className="stat-item"><span>{label}</span><strong>{value}</strong></div>; }
+
+export default App;

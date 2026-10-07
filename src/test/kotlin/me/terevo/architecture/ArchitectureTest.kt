@@ -11,7 +11,6 @@ class ArchitectureTest {
         assertNoImports(
             layer = "me.terevo.domain",
             forbidden = listOf(
-                "androidx.compose",
                 "app.cash.sqldelight",
                 "java.sql",
                 "java.io",
@@ -90,6 +89,7 @@ class ArchitectureTest {
                 "java.sql",
                 "me.terevo.persistence",
                 "me.terevo.gedcom",
+                "me.terevo.server",
             ),
         )
     }
@@ -98,15 +98,15 @@ class ArchitectureTest {
     fun `adapters do not depend on ui`() {
         assertNoImports(
             layer = "me.terevo.persistence",
-            forbidden = listOf("androidx.compose", "me.terevo.ui", "me.terevo.app"),
+            forbidden = listOf("me.terevo.ui", "me.terevo.app", "me.terevo.server"),
         )
         assertNoImports(
             layer = "me.terevo.gedcom",
-            forbidden = listOf("androidx.compose", "me.terevo.ui", "me.terevo.app"),
+            forbidden = listOf("me.terevo.ui", "me.terevo.app", "me.terevo.server"),
         )
         assertNoImports(
             layer = "me.terevo.export",
-            forbidden = listOf("androidx.compose", "me.terevo.ui", "me.terevo.app"),
+            forbidden = listOf("me.terevo.ui", "me.terevo.app", "me.terevo.server"),
         )
     }
 

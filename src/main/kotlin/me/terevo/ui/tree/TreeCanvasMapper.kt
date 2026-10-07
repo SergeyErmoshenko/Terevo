@@ -57,7 +57,6 @@ object TreeCanvasMapper {
         )
         return TreeCanvasState(
             layout = layout,
-            spatialIndex = SpatialIndex.build(layout),
             visuals = visuals,
             tree = tree,
         )

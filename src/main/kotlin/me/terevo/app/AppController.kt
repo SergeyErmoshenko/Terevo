@@ -22,11 +22,11 @@ import me.terevo.ui.*
 import me.terevo.ui.events.EventFormState
 import me.terevo.ui.events.toEvent
 import me.terevo.ui.events.validateEventForm
-import me.terevo.ui.export.exportTreePng
 import me.terevo.ui.kinship.KinshipDialogState
 import me.terevo.ui.person.*
-import me.terevo.ui.theme.LightColors
 import me.terevo.ui.tree.*
+import org.apache.pdfbox.Loader
+import org.apache.pdfbox.rendering.PDFRenderer
 import java.nio.file.Files
 import java.nio.file.Path
 import javax.imageio.ImageIO
@@ -47,6 +47,8 @@ class AppController(
 
     var commandBus: CommandBus? = null
         private set
+
+    val projectPath: String? get() = project?.location?.path
 
     fun create(location: ProjectLocation): AppState = activate(projects.create(location))
 
@@ -291,12 +293,24 @@ class AppController(
             is Outcome.Err -> return state.copy(status = "Не удалось открыть файл")
         }
         state = try {
-            val content = when {
-                media.mimeType.startsWith("image/") -> readBoundedImage(Path.of(path))
-                media.mimeType == "application/pdf" -> readBoundedFile(Path.of(path))
-                else -> byteArrayOf()
+            val viewer = when {
+                media.mimeType.startsWith("image/") -> {
+                    checkBoundedImage(Path.of(path))
+                    MediaViewerState(media, imagePath = path)
+                }
+
+                media.mimeType == "application/pdf" -> {
+                    checkBoundedFile(Path.of(path))
+                    MediaViewerState(
+                        media,
+                        imagePath = renderPdfPage(Path.of(path), 0),
+                        pageCount = pdfPageCount(Path.of(path)),
+                    )
+                }
+
+                else -> MediaViewerState(media, imagePath = null)
             }
-            state.copy(mediaViewer = MediaViewerState(media, content))
+            state.copy(mediaViewer = viewer)
         } catch (_: java.io.IOException) {
             state.copy(status = "Не удалось открыть файл")
         } catch (_: IllegalArgumentException) {
@@ -311,7 +325,16 @@ class AppController(
     }
 
     fun changeMediaPage(delta: Int): AppState {
-        state = state.copy(mediaViewer = state.mediaViewer?.let { it.copy(page = (it.page + delta).coerceAtLeast(0)) })
+        val viewer = state.mediaViewer ?: return state
+        if (viewer.media.mimeType != "application/pdf") return state
+        val page = (viewer.page + delta).coerceIn(0, viewer.pageCount - 1)
+        if (page == viewer.page) return state
+        val source = (project?.mediaRepository?.contentPath(viewer.media.id) as? Outcome.Ok)?.value ?: return state
+        state = try {
+            state.copy(mediaViewer = viewer.copy(page = page, imagePath = renderPdfPage(Path.of(source), page)))
+        } catch (_: java.io.IOException) {
+            state.copy(status = "Не удалось открыть файл")
+        }
         return state
     }
 
@@ -439,7 +462,6 @@ class AppController(
         val validity = RelationMode.entries.associateWith { mode -> canCreateRelation(tree, mode, source, target) }
         val sourceGender = tree.person(source)?.gender ?: Gender.UNKNOWN
         state = state.copy(
-            canvas = state.canvas.copy(nodeDrag = null),
             dragRelationMenu = DragRelationMenuState(source, target, screenPosition, validity, sourceGender),
         )
         return state
@@ -520,14 +542,9 @@ class AppController(
         return state
     }
 
-    fun exportPng(path: String): AppState {
-        val canvas = state.canvas
-        state = when (
-            exportTreePng(canvas.layout, canvas.visuals, LightColors, canvas.layout.bounds, DEFAULT_PNG_SCALE, path)
-        ) {
-            is Outcome.Ok -> state.copy(status = "PNG экспортирован")
-            is Outcome.Err -> state.copy(status = "Не удалось экспортировать PNG")
-        }
+    // The PNG itself is drawn and written by the frontend; this only reports the outcome.
+    fun reportPngExport(succeeded: Boolean): AppState {
+        state = state.copy(status = if (succeeded) "PNG экспортирован" else "Не удалось экспортировать PNG")
         return state
     }
 
@@ -570,55 +587,48 @@ class AppController(
         return state
     }
 
-    fun updateCanvas(intent: TreeCanvasIntent): AppState {
-        val canvas = reduceTreeCanvas(state.canvas, intent)
-        state = when (intent) {
-            is TreeCanvasIntent.SelectAt -> {
-                val selected = canvas.selected?.toPersonId()
-                val previous = state.selectedPerson?.id
-                remapSelection(
-                    commandBus?.tree?.value ?: return state,
-                    selected,
-                    source = state.copy(canvas = canvas)
-                ).copy(
-                    selectionBackHistory = if (previous == null || previous == selected) state.selectionBackHistory else state.selectionBackHistory + previous,
-                    selectionForwardHistory = if (previous == selected) state.selectionForwardHistory else emptyList(),
-                )
-            }
+    // A click on a card (or on empty canvas, with null) selects without moving the view.
+    fun selectOnCanvas(id: PersonId?): AppState {
+        val tree = commandBus?.tree?.value ?: return state
+        val previous = state.selectedPerson?.id
+        state = remapSelection(tree, id).copy(
+            selectionBackHistory = if (previous == null || previous == id) state.selectionBackHistory else state.selectionBackHistory + previous,
+            selectionForwardHistory = if (previous == id) state.selectionForwardHistory else emptyList(),
+        )
+        return state
+    }
 
-            is TreeCanvasIntent.EditAt -> {
-                val selected = canvas.spatialIndex.hitTest(canvas.camera.screenToWorld(intent.position))?.toPersonId()
-                remapSelection(commandBus?.tree?.value ?: return state, selected).also { state = it }
-                startEditingPerson()
-            }
+    fun clearHighlight(): AppState {
+        state = state.copy(canvas = state.canvas.copy(highlight = TreeHighlight.NONE))
+        return state
+    }
 
-            is TreeCanvasIntent.AddPersonAt -> {
-                state = state.copy(canvas = canvas)
-                startAddingPerson()
-            }
+    fun editPerson(id: PersonId): AppState {
+        state = remapSelection(commandBus?.tree?.value ?: return state, id)
+        return startEditingPerson()
+    }
 
-            is TreeCanvasIntent.AddRelativeAt -> {
-                val selected = intent.nodeId.toPersonId()
-                remapSelection(commandBus?.tree?.value ?: return state, selected).also { state = it }
-                startAddingRelation(intent.mode)
-            }
+    fun startAddingRelationFor(id: PersonId, mode: RelationMode): AppState {
+        state = remapSelection(commandBus?.tree?.value ?: return state, id)
+        return startAddingRelation(mode)
+    }
 
-            TreeCanvasIntent.DragNodeEnd -> {
-                val drag = state.canvas.nodeDrag
-                val target = drag?.hoverTarget
-                when {
-                    drag == null -> state.copy(canvas = canvas)
-                    target == null -> state.copy(canvas = canvas.copy(nodeDrag = null))
-                    else -> startRelationFromDrag(
-                        drag.nodeId.toPersonId(),
-                        target.toPersonId(),
-                        state.canvas.camera.worldToScreen(drag.currentWorld),
-                    )
-                }
-            }
+    fun startDrag(source: PersonId): AppState {
+        val tree = commandBus?.tree?.value ?: return state
+        val targets = tree.persons.keys.filterTo(mutableSetOf()) { it != source && canCreateAnyRelation(tree, source, it) }
+        state = state.copy(dragSource = source, dragTargets = targets)
+        return state
+    }
 
-            else -> state.copy(canvas = canvas)
-        }
+    fun dropDrag(target: PersonId?, screenPosition: Point): AppState {
+        val source = state.dragSource ?: return state
+        state = state.copy(dragSource = null, dragTargets = emptySet())
+        if (target == null || target == source) return state
+        return startRelationFromDrag(source, target, screenPosition)
+    }
+
+    fun cancelDrag(): AppState {
+        state = state.copy(dragSource = null, dragTargets = emptySet())
         return state
     }
 
@@ -790,8 +800,11 @@ class AppController(
         // the branch that genuinely did move right appeared frozen in place while every card got
         // slightly smaller and looked cramped. Fitting is now only done where the user asks for it
         // (the FitToScreen action) or on the first viewport measurement (TreeCanvasIntent.Resize).
-        return TreeCanvasMapper.map(tree, options, mediaRepository)
-            .copy(viewport = state.canvas.viewport, camera = state.canvas.camera, searchAnchor = state.canvas.searchAnchor)
+        return TreeCanvasMapper.map(tree, options, mediaRepository).copy(
+            searchAnchor = state.canvas.searchAnchor,
+            centerOn = state.canvas.centerOn,
+            centerRequest = state.canvas.centerRequest,
+        )
     }
 
     @OptIn(ExperimentalTime::class)
@@ -844,11 +857,7 @@ class AppController(
             searchResults = source.searchResults.mapTo(mutableSetOf()) { it.id.toNodeId() },
         )
         val highlightedCanvas = source.canvas.copy(highlight = highlight)
-        val canvas = if (center && person != null) {
-            reduceTreeCanvas(highlightedCanvas, TreeCanvasIntent.CenterSelected)
-        } else {
-            highlightedCanvas
-        }
+        val canvas = if (center && person != null) highlightedCanvas.centeredOnSelected() else highlightedCanvas
         return source.copy(
             canvas = canvas,
             selectedPerson = person,
@@ -884,7 +893,7 @@ class AppController(
         val selected = history.centerOn?.toPersonId() ?: state.selectedPerson?.id
         state = remapTree(bus.tree.value, selected)
         if (history.centerOn != null) {
-            state = state.copy(canvas = reduceTreeCanvas(state.canvas, TreeCanvasIntent.CenterSelected))
+            state = state.copy(canvas = state.canvas.centeredOnSelected())
         }
         return state
     }
@@ -955,8 +964,8 @@ private fun me.terevo.layout.NodeId.toPersonId(): PersonId = PersonId.parse(valu
 
 private fun PersonId.toNodeId(): me.terevo.layout.NodeId = me.terevo.layout.NodeId(value.toString())
 
-private fun readBoundedImage(path: Path): ByteArray {
-    require(Files.size(path) <= MAX_PREVIEW_FILE_BYTES)
+private fun checkBoundedImage(path: Path) {
+    checkBoundedFile(path)
     ImageIO.createImageInputStream(path.toFile()).use { input ->
         requireNotNull(input)
         val readers = ImageIO.getImageReaders(input)
@@ -969,12 +978,23 @@ private fun readBoundedImage(path: Path): ByteArray {
             reader.dispose()
         }
     }
-    return Files.readAllBytes(path)
 }
 
-private fun readBoundedFile(path: Path): ByteArray {
+private fun checkBoundedFile(path: Path) {
     require(Files.size(path) <= MAX_PREVIEW_FILE_BYTES)
-    return Files.readAllBytes(path)
+}
+
+private fun pdfPageCount(path: Path): Int = Loader.loadPDF(path.toFile()).use { it.numberOfPages }
+
+// PDF pages are rendered to PNG files the frontend can show like any image; the preview directory
+// is a fixed folder under the system temp dir so the frontend may allow reading from it.
+private fun renderPdfPage(path: Path, page: Int): String {
+    val directory = Files.createDirectories(Path.of(System.getProperty("java.io.tmpdir"), PREVIEW_DIRECTORY))
+    val target = directory.resolve("page-${System.nanoTime()}.png")
+    Loader.loadPDF(path.toFile()).use { document ->
+        ImageIO.write(PDFRenderer(document).renderImageWithDPI(page, PDF_PREVIEW_DPI), "png", target.toFile())
+    }
+    return target.toString()
 }
 
 fun DomainError.toRussianMessage(): String = when (this) {
@@ -991,4 +1011,5 @@ fun DomainError.toRussianMessage(): String = when (this) {
 
 private const val MAX_PREVIEW_FILE_BYTES: Long = 25L * 1024L * 1024L
 private const val MAX_IMAGE_DIMENSION: Int = 10_000
-private const val DEFAULT_PNG_SCALE: Double = 1.0
+private const val PDF_PREVIEW_DPI: Float = 150f
+const val PREVIEW_DIRECTORY: String = "terevo-preview"
