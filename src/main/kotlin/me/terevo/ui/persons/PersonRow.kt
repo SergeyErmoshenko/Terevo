@@ -17,4 +17,5 @@ data class PersonRow(
     val occupation: String,
     val comment: String,
     val alive: Boolean,
+    val searchText: String,
 )

@@ -59,7 +59,7 @@ export function SearchBar({ state, dispatch }: { state: AppStateDto; dispatch: (
 
       {resultsOpen && state.searchResults.length > 0 && (
         <div className="search-results">
-          {state.searchResults.slice(0, 8).map((person) => (
+          {state.searchResults.map((person) => (
             <button
               key={person.id}
               type="button"

@@ -3,6 +3,7 @@ const { spawn } = require("node:child_process");
 const path = require("node:path");
 const fs = require("node:fs");
 const os = require("node:os");
+const zlib = require("node:zlib");
 const { pathToFileURL } = require("node:url");
 
 let backend;
@@ -20,6 +21,7 @@ let previewDirectory = null;
 // consumed - a one-shot grant, not a standing permission, so the renderer cannot write anywhere
 // else just by knowing a path string.
 let grantedPngPath = null;
+let pngStream = null;
 
 let menuSummary = {
   isProjectOpen: false,
@@ -176,18 +178,31 @@ ipcMain.handle("backend:call", async (_event, { requestId, action }) => {
       action: { type: "createProjectFromGedcom", name: action.name, gedcomPath: result.filePaths[0] },
     });
   }
-  if (action.type === "exportGedcomDialog" || action.type === "exportPdfDialog") {
-    const isPdf = action.type === "exportPdfDialog";
+  if (action.type === "exportGedcomDialog") {
     const result = await dialog.showSaveDialog({
-      title: isPdf ? "Экспорт в PDF" : "Экспорт GEDCOM",
-      defaultPath: isPdf ? "family-tree.pdf" : "family.ged",
-      filters: [{ name: isPdf ? "PDF" : "GEDCOM", extensions: [isPdf ? "pdf" : "ged"] }],
+      title: "Экспорт GEDCOM",
+      defaultPath: "family.ged",
+      filters: [{ name: "GEDCOM", extensions: ["ged"] }],
     });
     if (result.canceled || !result.filePath) return null;
-    return callBackend({ id: requestId, action: { type: isPdf ? "exportPdf" : "exportGedcom", path: result.filePath } });
+    return callBackend({ id: requestId, action: { type: "exportGedcom", path: result.filePath } });
   }
   if (action.type === "chooseMediaDialog" || action.type === "choosePersonFormMediaDialog") {
-    const result = await dialog.showOpenDialog({ title: "Добавить фото или документ", properties: ["openFile", "multiSelections"] });
+    const imageExtensions = ["jpg", "jpeg", "png", "gif", "bmp", "webp"];
+    const documentExtensions = ["pdf", "doc", "docx", "odt", "rtf", "txt"];
+    const photoFilter = { name: "Изображения", extensions: imageExtensions };
+    const documentFilter = { name: "Документы (PDF, Word)", extensions: documentExtensions };
+    const filters =
+      action.kind === "document"
+        ? [documentFilter, photoFilter]
+        : action.kind === "photo"
+          ? [photoFilter, documentFilter]
+          : [{ name: "Фото и документы", extensions: [...imageExtensions, ...documentExtensions] }, photoFilter, documentFilter];
+    const result = await dialog.showOpenDialog({
+      title: action.kind === "document" ? "Добавить документ" : action.kind === "photo" ? "Добавить фото" : "Добавить фото или документ",
+      properties: ["openFile", "multiSelections"],
+      filters: [...filters, { name: "Все файлы", extensions: ["*"] }],
+    });
     if (result.canceled || result.filePaths.length === 0) return null;
     const paths = result.filePaths;
     return callBackend({
@@ -217,16 +232,103 @@ ipcMain.handle("dialog:choosePngPath", async () => {
   return grantedPngPath;
 });
 
-ipcMain.handle("fs:writePng", async (_event, { path: targetPath, bytes }) => {
+// A PNG too large for one canvas is streamed in: the renderer paints it in strips of rows and the
+// main process deflates them straight into the file, so the whole picture is never in memory. Only
+// the path granted by the save dialog can be written, once.
+function pngChunk(type, data) {
+  const typeBuffer = Buffer.from(type, "ascii");
+  const header = Buffer.alloc(4);
+  header.writeUInt32BE(data.length);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(zlib.crc32(Buffer.concat([typeBuffer, data])) >>> 0);
+  return Buffer.concat([header, typeBuffer, data, crc]);
+}
+
+function abortPng() {
+  const stream = pngStream;
+  pngStream = null;
+  if (!stream) return;
+  stream.deflate.destroy();
+  stream.file.destroy();
+  fs.promises.unlink(stream.path).catch(() => {});
+}
+
+ipcMain.handle("png:begin", async (_event, { path: targetPath, width, height }) => {
   if (!grantedPngPath || targetPath !== grantedPngPath) return false;
   grantedPngPath = null;
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 100000 || height > 100000) return false;
+  abortPng();
   try {
-    await fs.promises.writeFile(targetPath, Buffer.from(bytes));
+    const file = fs.createWriteStream(targetPath);
+    const deflate = zlib.createDeflate({ level: 6 });
+    const stream = { path: targetPath, file, deflate, width, height, rows: 0, failure: null };
+    file.on("error", (error) => (stream.failure = error));
+    deflate.on("error", (error) => (stream.failure = error));
+    deflate.on("data", (chunk) => {
+      if (!file.write(pngChunk("IDAT", chunk))) {
+        deflate.pause();
+        file.once("drain", () => deflate.resume());
+      }
+    });
+    const ihdr = Buffer.alloc(13);
+    ihdr.writeUInt32BE(width, 0);
+    ihdr.writeUInt32BE(height, 4);
+    ihdr[8] = 8; // bit depth
+    ihdr[9] = 2; // truecolor RGB
+    file.write(Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), pngChunk("IHDR", ihdr)]));
+    pngStream = stream;
     return true;
   } catch (error) {
     process.stderr.write(`PNG export failed: ${error.message}\n`);
     return false;
   }
+});
+
+ipcMain.handle("png:rows", async (_event, { path: targetPath, bytes, rows }) => {
+  const stream = pngStream;
+  if (!stream || stream.path !== targetPath || stream.failure) return false;
+  const rowBytes = stream.width * 3;
+  if (!Number.isInteger(rows) || rows < 1 || stream.rows + rows > stream.height || bytes.length !== rowBytes * rows) return false;
+  const data = Buffer.alloc((rowBytes + 1) * rows); // every row starts with filter type 0 (none)
+  for (let row = 0; row < rows; row++) {
+    Buffer.from(bytes.buffer, bytes.byteOffset + row * rowBytes, rowBytes).copy(data, row * (rowBytes + 1) + 1);
+  }
+  stream.rows += rows;
+  if (!stream.deflate.write(data)) await new Promise((resolve) => stream.deflate.once("drain", resolve));
+  return !stream.failure;
+});
+
+ipcMain.handle("png:end", async (_event, { path: targetPath }) => {
+  const stream = pngStream;
+  if (!stream || stream.path !== targetPath) return false;
+  if (stream.failure || stream.rows !== stream.height) {
+    abortPng();
+    return false;
+  }
+  try {
+    await new Promise((resolve, reject) => {
+      stream.deflate.once("end", resolve);
+      stream.deflate.once("error", reject);
+      stream.deflate.end();
+      stream.deflate.resume();
+    });
+    await new Promise((resolve, reject) => {
+      stream.file.once("finish", resolve);
+      stream.file.once("error", reject);
+      stream.file.end(pngChunk("IEND", Buffer.alloc(0)));
+    });
+    pngStream = null;
+    return true;
+  } catch (error) {
+    process.stderr.write(`PNG export failed: ${error.message}\n`);
+    abortPng();
+    return false;
+  }
+});
+
+ipcMain.handle("png:abort", (_event, { path: targetPath }) => {
+  if (pngStream && pngStream.path === targetPath) abortPng();
+  return true;
 });
 
 ipcMain.on("menu:summary", (_event, summary) => {
@@ -251,7 +353,6 @@ function buildMenu() {
         { type: "separator" },
         { label: "Экспорт GEDCOM…", enabled: s.isProjectOpen, click: () => sendMenuAction({ type: "exportGedcomDialog" }) },
         { label: "Экспорт в PNG…", enabled: s.isProjectOpen, click: () => sendMenuAction({ type: "exportPngDialog" }) },
-        { label: "Экспорт в PDF…", enabled: s.isProjectOpen, click: () => sendMenuAction({ type: "exportPdfDialog" }) },
         { type: "separator" },
         { role: "close" },
       ],
@@ -299,7 +400,13 @@ function registerFileProtocol() {
     const allowedRoots = [currentProjectDirectory, previewDirectory].filter(Boolean).map((root) => path.resolve(root));
     const allowed = allowedRoots.some((root) => resolved === root || resolved.startsWith(root + path.sep));
     if (!allowed) return new Response("Forbidden", { status: 403 });
-    return net.fetch(pathToFileURL(resolved).toString());
+    // The page itself is loaded from file://, so images from this scheme are cross-origin; without
+    // CORS headers the PNG export could not read them back without tainting its canvas.
+    return net.fetch(pathToFileURL(resolved).toString()).then((response) => {
+      const headers = new Headers(response.headers);
+      headers.set("access-control-allow-origin", "*");
+      return new Response(response.body, { status: response.status, headers });
+    });
   });
 }
 
@@ -312,6 +419,7 @@ async function createWindow() {
     minHeight: 600,
     backgroundColor: "#1c1d21",
     title: "Terevo",
+    icon: path.join(__dirname, "assets", "icon.png"),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -330,10 +438,13 @@ async function createWindow() {
 }
 
 protocol.registerSchemesAsPrivileged([
-  { scheme: "terevo-file", privileges: { standard: false, secure: true, supportFetchAPI: true, stream: true } },
+  { scheme: "terevo-file", privileges: { standard: false, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
 ]);
 
 app.whenReady().then(async () => {
+  // In development Electron runs as its own stock bundle, so the Dock still shows the Electron
+  // atom until it is replaced here. The packaged app gets the icon from electron-builder.
+  if (process.platform === "darwin" && app.dock) app.dock.setIcon(path.join(__dirname, "assets", "icon.png"));
   registerFileProtocol();
   buildMenu();
   await createWindow();

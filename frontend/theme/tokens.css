@@ -37,12 +37,12 @@
   --font-sans: Inter, "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 
   /* Type scale — a tight desktop scale; 13px body keeps dense tables readable. */
-  --text-xs: 11px;
-  --text-sm: 12px;
-  --text-md: 13px;
-  --text-lg: 15px;
-  --text-xl: 18px;
-  --text-2xl: 22px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 24px;
 
   /* Motion — short, ease-out; reduced-motion collapses these in styles.css. */
   --ease: cubic-bezier(0.2, 0, 0, 1);
@@ -50,12 +50,12 @@
   --duration: 180ms;
 
   /* Component sizing (layer 3: component tokens built on the scales above). */
-  --topbar-height: 48px;
-  --toolbar-height: 48px;
+  --topbar-height: 52px;
+  --toolbar-height: 52px;
   --statusbar-height: 26px;
-  --rail-width: 68px;
+  --rail-width: 100px;
   --inspector-width: 320px;
-  --control-height: 32px;
+  --control-height: 36px;
   --ring-soft: 0 0 0 3px var(--color-primary-soft);
 
   /* Surfaces — a slate ramp. Each step is a small, consistent lightening so nested surfaces
@@ -96,11 +96,13 @@
   --color-male: #60a5fa;
   --color-female: #f472b6;
   --color-neutral-gender: #94a3b8;
-  --color-edge-blood: #7c8ba3;
+  --color-edge-blood: #9aabc6;
   --color-edge-other: var(--color-accent);
 
   /* Tree canvas */
-  --canvas-bg: #0e1626;
+  --canvas-bg: #070b14;
+  --canvas-card-border: #3d5278;
+  --canvas-band-boost: 1.9;
   --canvas-dot: rgba(159, 176, 200, 0.22);
   --canvas-band-a: rgba(96, 165, 250, 0.07);
   --canvas-band-b: rgba(244, 114, 182, 0.07);
@@ -143,6 +145,8 @@
   --color-edge-other: var(--color-accent);
 
   --canvas-bg: #fbfcfd;
+  --canvas-card-border: var(--color-line);
+  --canvas-band-boost: 1;
   --canvas-dot: rgba(100, 116, 139, 0.2);
   --canvas-band-a: rgba(37, 99, 235, 0.06);
   --canvas-band-b: rgba(219, 39, 119, 0.06);

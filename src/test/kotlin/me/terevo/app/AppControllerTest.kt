@@ -434,13 +434,14 @@ class AppControllerTest {
     }
 
     @Test
-    fun `home is the first person added`() {
+    fun `home is the person with the most known ancestors`() {
         controller.create(locationOf("explicit-fit"))
         val parent = createPerson("Иванов", "Иван")
-        controller.selectPerson(parent)
-        repeat(3) { index -> addChild(parent, "Иванов", "Ребёнок$index") }
+        val son = addChild(parent, "Иванов", "Сын")
+        addChild(parent, "Иванов", "Дочь")
+        val grandson = addChild(son, "Иванов", "Внук")
 
-        assertEquals(me.terevo.layout.NodeId(parent.value.toString()), controller.state.canvas.homePersonId)
+        assertEquals(me.terevo.layout.NodeId(grandson.value.toString()), controller.state.canvas.homePersonId)
     }
 
     @Test
@@ -456,6 +457,20 @@ class AppControllerTest {
 
         controller.changeSearchFilter(me.terevo.ui.person.PersonSearchFilter())
         assertEquals(node(first), controller.state.canvas.homePersonId)
+    }
+
+    @Test
+    fun `show on tree switches to the tree tab and requests centering`() {
+        controller.create(locationOf("show-on-tree"))
+        val person = createPerson("Иванов", "Иван")
+        controller.changeMainTab(me.terevo.ui.MainTab.PERSONS)
+        val before = controller.state.canvas.centerRequest
+
+        controller.showOnTree(person)
+
+        assertEquals(me.terevo.ui.MainTab.TREE, controller.state.mainTab)
+        assertEquals(person, controller.state.selectedPerson?.id)
+        assertTrue(controller.state.canvas.centerRequest > before)
     }
 
     @Test

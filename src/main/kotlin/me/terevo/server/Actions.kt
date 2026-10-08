@@ -29,9 +29,6 @@ sealed interface Action {
     @Serializable @SerialName("exportGedcom")
     data class ExportGedcom(val path: String) : Action
 
-    @Serializable @SerialName("exportPdf")
-    data class ExportPdf(val path: String) : Action
-
     @Serializable @SerialName("reportPngExport")
     data class ReportPngExport(val succeeded: Boolean) : Action
 
@@ -104,6 +101,9 @@ sealed interface Action {
 
     @Serializable @SerialName("selectOnCanvas")
     data class SelectOnCanvas(val id: String?) : Action
+
+    @Serializable @SerialName("showOnTree")
+    data class ShowOnTree(val id: String) : Action
 
     @Serializable @SerialName("selectSearchResult")
     data class SelectSearchResult(val id: String) : Action
@@ -214,7 +214,6 @@ fun AppController.dispatch(action: Action, directories: ProjectDirectories): App
     is Action.OpenProject -> open(ProjectLocation(action.path))
     is Action.CreateProjectFromGedcom -> createFromGedcom(directories.location(action.name), action.gedcomPath)
     is Action.ExportGedcom -> exportGedcom(action.path)
-    is Action.ExportPdf -> exportPdf(action.path)
     is Action.ReportPngExport -> reportPngExport(action.succeeded)
     Action.ConfirmGedcomImport -> confirmGedcomImport()
     Action.CancelGedcomImport -> cancelGedcomImport()
@@ -240,6 +239,7 @@ fun AppController.dispatch(action: Action, directories: ProjectDirectories): App
     Action.CloseMedia -> closeMedia()
     is Action.SelectPerson -> selectPerson(action.id?.let(::personIdOf))
     is Action.SelectOnCanvas -> selectOnCanvas(action.id?.let(::personIdOf))
+    is Action.ShowOnTree -> showOnTree(personIdOf(action.id))
     is Action.SelectSearchResult -> selectSearchResult(personIdOf(action.id))
     Action.ClearHighlight -> clearHighlight()
     is Action.ViewPerson -> viewPerson(personIdOf(action.id))

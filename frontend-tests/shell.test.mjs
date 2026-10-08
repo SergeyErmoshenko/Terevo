@@ -78,7 +78,9 @@ test("local files are served through a privileged scheme scoped to the project a
 test("PNG export writes only to the path just granted by a save dialog", () => {
   const main = read("electron/main.cjs");
   assert.match(main, /ipcMain\.handle\("dialog:choosePngPath"/);
-  assert.match(main, /ipcMain\.handle\("fs:writePng"/);
+  assert.match(main, /ipcMain\.handle\("png:begin"/);
+  assert.match(main, /ipcMain\.handle\("png:rows"/);
+  assert.match(main, /ipcMain\.handle\("png:end"/);
   assert.match(main, /if \(!grantedPngPath \|\| targetPath !== grantedPngPath\) return false;/);
 });
 

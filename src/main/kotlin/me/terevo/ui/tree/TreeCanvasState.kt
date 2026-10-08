@@ -26,11 +26,16 @@ data class TreeCanvasState(
 ) {
     val selected: NodeId? get() = highlight.selected
 
-    // tree.persons keeps load order, which is the order people were added.
-    val homePersonId: NodeId?
-        get() = searchAnchor?.takeIf { it in layout.nodes }
-            ?: tree.persons.keys.asSequence().map { NodeId(it.value.toString()) }.firstOrNull { it in layout.nodes }
+    // The tree's main person is the one the family was built around: whoever has the most known
+    // ancestors. Ties keep the old rule (the first person added; tree.persons keeps load order).
+    val homePersonId: NodeId? by lazy {
+        searchAnchor?.takeIf { it in layout.nodes }
+            ?: tree.persons.keys.asSequence()
+                .filter { NodeId(it.value.toString()) in layout.nodes }
+                .maxByOrNull { tree.ancestors(it).size }
+                ?.let { NodeId(it.value.toString()) }
             ?: layout.mainPersonId
+    }
 
     fun centeredOnSelected(): TreeCanvasState =
         if (selected == null) this else copy(centerOn = selected, centerRequest = centerRequest + 1)

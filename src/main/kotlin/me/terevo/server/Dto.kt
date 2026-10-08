@@ -231,6 +231,7 @@ data class PersonRowDto(
     val occupation: String,
     val comment: String,
     val alive: Boolean,
+    val searchText: String,
 )
 
 @Serializable
@@ -461,7 +462,7 @@ fun SpouseInfo.toDto() = SpouseDto(
 
 fun PersonRow.toDto() = PersonRowDto(
     id.value.toString(), thumbnailPath, fullName, gender, birthDate, birthDateSortKey?.toString(), residence, age,
-    ageSortKey, occupation, comment, alive,
+    ageSortKey, occupation, comment, alive, searchText,
 )
 
 fun EventRow.toDto() = EventRowDto(

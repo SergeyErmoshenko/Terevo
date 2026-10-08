@@ -33,7 +33,7 @@ class ProjectMediaRepository(
         val media = Media(
             id = MediaId.next(),
             fileName = source.fileName.toString(),
-            mimeType = Files.probeContentType(source) ?: "application/octet-stream",
+            mimeType = mimeTypeOf(source),
             sizeBytes = Files.size(source),
             sha256 = hash,
         )
@@ -149,9 +149,32 @@ private fun BufferedImage.thumbnail(): BufferedImage {
 private fun me.terevo.persistence.db.Media.toMedia(): Media = Media(
     id = MediaId.parse(id),
     fileName = file_name,
-    mimeType = mime_type,
+    // Rows imported before the extension table existed may carry application/octet-stream.
+    mimeType = KNOWN_MIME_TYPES[file_name.substringAfterLast('.', "").lowercase()] ?: mime_type,
     sizeBytes = size_bytes,
     sha256 = sha256,
 )
 
 private const val THUMBNAIL_SIZE: Int = 256
+
+// Files.probeContentType depends on the OS registry and often answers null for PDF/Office files
+// (notably on macOS), which would make them unopenable, so well-known extensions win.
+private val KNOWN_MIME_TYPES = mapOf(
+    "pdf" to "application/pdf",
+    "doc" to "application/msword",
+    "docx" to "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "odt" to "application/vnd.oasis.opendocument.text",
+    "rtf" to "application/rtf",
+    "txt" to "text/plain",
+    "png" to "image/png",
+    "jpg" to "image/jpeg",
+    "jpeg" to "image/jpeg",
+    "gif" to "image/gif",
+    "bmp" to "image/bmp",
+    "webp" to "image/webp",
+)
+
+internal fun mimeTypeOf(source: Path): String {
+    val extension = source.fileName.toString().substringAfterLast('.', "").lowercase()
+    return KNOWN_MIME_TYPES[extension] ?: Files.probeContentType(source) ?: "application/octet-stream"
+}

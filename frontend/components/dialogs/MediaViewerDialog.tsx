@@ -48,7 +48,11 @@ export function MediaViewerDialog({ viewer, dispatch }: { viewer: MediaViewerDto
         {url ? (
           <img src={url} alt={viewer.media.fileName} style={{ transform: `scale(${viewer.zoom})` }} />
         ) : (
-          <p className="field-hint">{viewer.media.mimeType}</p>
+          <div className="media-no-preview">
+            <Icon name="fileText" size={36} />
+            <strong>{viewer.media.fileName}</strong>
+            <span>Предпросмотр для этого типа файла недоступен. Файл сохранён в проекте.</span>
+          </div>
         )}
       </div>
     </Dialog>

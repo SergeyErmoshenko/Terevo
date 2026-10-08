@@ -26,8 +26,15 @@ export function EventDateFields({
       <span className="field-label">{label}</span>
       <SegmentedControl options={MODES} selected={input.mode} label={(mode) => modeLabel[mode]} onSelect={(mode) => onChange({ ...input, mode })} />
       {(input.mode === "EXACT" || input.mode === "APPROXIMATE") && (
-        <TextField label={label} value={input.value} placeholder="ДД.ММ.ГГГГ" error={error} onChange={(value) => onChange({ ...input, value })} />
+        <input
+          value={input.value}
+          placeholder="ДД.ММ.ГГГГ"
+          aria-label={label}
+          aria-invalid={error ? true : undefined}
+          onChange={(event) => onChange({ ...input, value: event.target.value })}
+        />
       )}
+      {error && input.mode !== "RANGE" && <span className="field-error">{error}</span>}
       {input.mode === "RANGE" && (
         <div className="date-range">
           <TextField label="Начало" value={input.value} placeholder="ДД.ММ.ГГГГ" error={error} onChange={(value) => onChange({ ...input, value })} />

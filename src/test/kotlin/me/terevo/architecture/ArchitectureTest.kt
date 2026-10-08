@@ -104,10 +104,6 @@ class ArchitectureTest {
             layer = "me.terevo.gedcom",
             forbidden = listOf("me.terevo.ui", "me.terevo.app", "me.terevo.server"),
         )
-        assertNoImports(
-            layer = "me.terevo.export",
-            forbidden = listOf("me.terevo.ui", "me.terevo.app", "me.terevo.server"),
-        )
     }
 
     @Test

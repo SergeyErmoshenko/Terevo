@@ -1,15 +1,9 @@
-import type { Action } from "../../app/actions";
-import type { AppStateDto, Gender } from "../../app/dto";
+import type { Action, DispatchableAction } from "../../app/actions";
+import type { AppStateDto } from "../../app/dto";
 import { fileUrl } from "../../app/client";
 import { Icon } from "../icons/Icon";
 
-const spouseLabel: Record<Gender, string> = {
-  MALE: "Добавить супругу",
-  FEMALE: "Добавить супруга",
-  UNKNOWN: "Добавить супруга",
-};
-
-export function Inspector({ state, dispatch }: { state: AppStateDto; dispatch: (action: Action) => void }) {
+export function Inspector({ state, dispatch }: { state: AppStateDto; dispatch: (action: DispatchableAction) => void }) {
   const person = state.selectedPerson;
   const collapsed = state.sidebarCollapsed;
 
@@ -24,11 +18,48 @@ export function Inspector({ state, dispatch }: { state: AppStateDto; dispatch: (
       {collapsed ? null : person ? (
         <>
           <div className="person-details">
-            <div className={`person-avatar gender-${person.gender.toLowerCase()}`}>
-              {person.photoPath ? <img src={fileUrl(person.photoPath)} alt={person.name} /> : (person.name.trim()[0] ?? "?")}
+            <div className="person-head">
+              <div className="person-avatar-wrap">
+                <div className={`person-avatar gender-${person.gender.toLowerCase()}`}>
+                  {person.photoPath ? <img src={fileUrl(person.photoPath)} alt={person.name} /> : (person.name.trim()[0] ?? "?")}
+                </div>
+                <button
+                  className="avatar-edit"
+                  type="button"
+                  aria-label="Добавить фото"
+                  title="Добавить фото или документ"
+                  onClick={() => dispatch({ type: "chooseMediaDialog", kind: "photo" })}
+                >
+                  <Icon name="photo" size={14} />
+                </button>
+              </div>
+              <div className="person-head-text">
+                <h3>{person.name}</h3>
+                <p className="person-years">{person.lifeSpan || "Даты жизни не указаны"}</p>
+              </div>
             </div>
-            <h3>{person.name}</h3>
-            <p className="person-years">{person.lifeSpan || "Даты жизни не указаны"}</p>
+            <div className="person-actions">
+              <button className="secondary-button" type="button" onClick={() => dispatch({ type: "editPerson" })}>
+                <Icon name="edit" />
+                Изменить
+              </button>
+              <button className="secondary-button" type="button" onClick={() => dispatch({ type: "chooseMediaDialog", kind: "photo" })}>
+                <Icon name="photo" />
+                Добавить фото
+              </button>
+              <button className="secondary-button" type="button" onClick={() => dispatch({ type: "chooseMediaDialog", kind: "document" })}>
+                <Icon name="fileText" />
+                PDF / DOCX
+              </button>
+              <button className="secondary-button person-actions-wide" type="button" onClick={() => dispatch({ type: "showOnTree", id: person.id })}>
+                <Icon name="tree" />
+                Показать на дереве
+              </button>
+              <button className="secondary-button person-actions-wide" type="button" onClick={() => dispatch({ type: "openKinshipDialog" })}>
+                <Icon name="link" />
+                Кем приходится
+              </button>
+            </div>
             {person.maidenName && <Detail label="Девичья фамилия" value={person.maidenName} />}
             {person.birthPlace && <Detail label="Место рождения" value={person.birthPlace} />}
             {person.deathPlace && <Detail label="Место смерти" value={person.deathPlace} />}
@@ -65,15 +96,7 @@ export function Inspector({ state, dispatch }: { state: AppStateDto; dispatch: (
               </div>
             )}
 
-            <div className="person-actions">
-              <button className="secondary-button" type="button" onClick={() => dispatch({ type: "editPerson" })}>
-                <Icon name="edit" />
-                Изменить
-              </button>
-              <button className="secondary-button" type="button" onClick={() => dispatch({ type: "openKinshipDialog" })}>
-                <Icon name="link" />
-                Кем приходится
-              </button>
+            <div className="person-danger">
               <button
                 className="secondary-button danger-button"
                 type="button"
@@ -84,24 +107,28 @@ export function Inspector({ state, dispatch }: { state: AppStateDto; dispatch: (
                 }}
               >
                 <Icon name="trash" />
-                Удалить
+                Удалить человека
               </button>
             </div>
           </div>
           <div className="inspector-bottom">
+            <span className="relation-group-title">Добавить</span>
             <div className="relation-actions">
               <button className="secondary-button" type="button" onClick={() => dispatch({ type: "addRelative", mode: "PARENT" })}>
-                Добавить родителя
+                <Icon name="plus" size={14} />
+                Родителя
               </button>
               <button className="secondary-button" type="button" onClick={() => dispatch({ type: "addRelative", mode: "CHILD" })}>
-                Добавить ребёнка
+                <Icon name="plus" size={14} />
+                Ребёнка
               </button>
               <button className="secondary-button" type="button" onClick={() => dispatch({ type: "addRelative", mode: "SPOUSE" })}>
-                {spouseLabel[person.gender]}
+                <Icon name="plus" size={14} />
+                {person.gender === "MALE" ? "Супругу" : "Супруга"}
               </button>
               <button className="secondary-button" type="button" onClick={() => dispatch({ type: "addPerson" })}>
-                <Icon name="userPlus" />
-                Новый человек
+                <Icon name="userPlus" size={14} />
+                Человека
               </button>
             </div>
           </div>

@@ -17,7 +17,7 @@ data class PersonSearchFilter(
     val hasDates: Boolean? = null,
 ) {
     fun isEmpty(): Boolean = query.isBlank() && gender == null && birthYearFrom == null && birthYearTo == null &&
-        deathYearFrom == null && deathYearTo == null && place.isBlank() && hasParents == null && hasDates == null
+            deathYearFrom == null && deathYearTo == null && place.isBlank() && hasParents == null && hasDates == null
 }
 
 object PersonSearch {
@@ -37,23 +37,26 @@ object PersonSearch {
 private fun Person.matchesText(query: String): Boolean {
     val terms = query.trim().lowercase().split(Regex("\\s+")).filter(String::isNotBlank)
     if (terms.isEmpty()) return true
-    val text = buildString {
-        append(name.display)
-        append(' ')
-        append(birthPlace?.title.orEmpty())
-        append(' ')
-        append(deathPlace?.title.orEmpty())
-        append(' ')
-        append(notes)
-        customFields.forEach { (key, value) ->
-            append(' ')
-            append(key)
-            append(' ')
-            append(value)
-        }
-    }.lowercase()
+    val text = searchText()
     return terms.all(text::contains)
 }
+
+// Lower-cased text the people search matches against; the people table reuses it so both searches agree.
+fun Person.searchText(): String = buildString {
+    append(name.display)
+    append(' ')
+    append(birthPlace?.title.orEmpty())
+    append(' ')
+    append(deathPlace?.title.orEmpty())
+    append(' ')
+    append(notes)
+    customFields.forEach { (key, value) ->
+        append(' ')
+        append(key)
+        append(' ')
+        append(value)
+    }
+}.lowercase()
 
 private val Person.hasDates: Boolean
     get() = lifeSpan.birth != EventDate.Unknown || lifeSpan.death != EventDate.Unknown
@@ -68,7 +71,7 @@ private fun Person.matchesPlace(place: String): Boolean {
     val normalized = place.trim().lowercase()
     if (normalized.isEmpty()) return true
     return birthPlace?.title.orEmpty().lowercase().contains(normalized) ||
-        deathPlace?.title.orEmpty().lowercase().contains(normalized)
+            deathPlace?.title.orEmpty().lowercase().contains(normalized)
 }
 
 private fun EventDate.years(): IntRange? = when (this) {

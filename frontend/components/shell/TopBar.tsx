@@ -22,17 +22,9 @@ export function TopBar({
   return (
     <header className="topbar">
       <span className="brand">
-        <span className="brand-mark">T</span>
         <span>Terevo</span>
       </span>
       <div className="topbar-actions">
-        <button className="icon-button" type="button" aria-label="Отменить" title={state.undoLabel} disabled={!state.canUndo} onClick={() => dispatch({ type: "undo" })}>
-          <Icon name="undo" />
-        </button>
-        <button className="icon-button" type="button" aria-label="Повторить" title={state.redoLabel} disabled={!state.canRedo} onClick={() => dispatch({ type: "redo" })}>
-          <Icon name="redo" />
-        </button>
-        <span className="toolbar-divider" />
         {state.isProjectOpen && <span className="project-name">{state.projectName}</span>}
         <button className={state.isProjectOpen ? "secondary-button" : "primary-button"} type="button" onClick={onNewProject}>
           Новый проект
@@ -70,16 +62,6 @@ export function TopBar({
                   }}
                 >
                   Экспорт в PNG
-                </button>
-                <button
-                  type="button"
-                  disabled={!state.isProjectOpen}
-                  onClick={() => {
-                    setMenuOpen(false);
-                    dispatch({ type: "exportPdfDialog" });
-                  }}
-                >
-                  Экспорт в PDF
                 </button>
                 <button
                   type="button"

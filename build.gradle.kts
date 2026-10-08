@@ -11,7 +11,7 @@ plugins {
 }
 
 group = "me.terevo"
-version = providers.gradleProperty("version").getOrElse("1.0.1")
+version = providers.gradleProperty("version").getOrElse("2.0.0")
 
 val graphvizVersion = "12.2.1"
 val graphvizWindowsUrl =
@@ -114,6 +114,9 @@ sqldelight {
 application {
     mainClass = "me.terevo.server.ServerMainKt"
     applicationName = "terevo-backend"
+    // The backend only decodes images and renders PDF/PNG off-screen. Without headless mode macOS
+    // shows a second, empty "Java" app in the Dock the first time AWT/ImageIO is touched.
+    applicationDefaultJvmArgs = listOf("-Djava.awt.headless=true", "-Dapple.awt.UIElement=true")
 }
 
 // electron-builder stages this distribution as an extra resource for macOS and Windows.

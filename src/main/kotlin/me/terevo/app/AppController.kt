@@ -8,7 +8,6 @@ import me.terevo.domain.Outcome
 import me.terevo.domain.command.*
 import me.terevo.domain.model.*
 import me.terevo.domain.port.*
-import me.terevo.export.PdfFiles
 import me.terevo.gedcom.GedcomFiles
 import me.terevo.kinship.KinshipCalculator
 import me.terevo.kinship.KinshipResult
@@ -163,8 +162,15 @@ class AppController(
         return state
     }
 
-    fun selectSearchResult(id: PersonId): AppState {
+    // Switches to the tree tab and centers the camera on the person, whatever tab the request came from.
+    fun showOnTree(id: PersonId): AppState {
         selectPerson(id)
+        state = state.copy(mainTab = MainTab.TREE, canvas = state.canvas.centeredOnSelected())
+        return state
+    }
+
+    fun selectSearchResult(id: PersonId): AppState {
+        showOnTree(id)
         state = state.copy(canvas = state.canvas.copy(searchAnchor = id.toNodeId()))
         return state
     }
@@ -354,7 +360,10 @@ class AppController(
         state = when (bus.execute(UpdatePerson(updated))) {
             is Outcome.Ok -> {
                 opened.mediaRepository.deleteIfUnused(id)
-                remapTree(bus.tree.value, person.id).copy(status = "Файл удалён")
+                // An open edit form keeps its own snapshot of the person; without refreshing it,
+                // saving the form would write the removed file back into the person.
+                val form = state.personForm?.let { open -> if (open.original?.id == person.id) open.copy(original = updated) else open }
+                remapTree(bus.tree.value, person.id).copy(personForm = form, status = "Файл удалён")
             }
 
             is Outcome.Err -> state.copy(status = "Не удалось удалить файл")
@@ -545,15 +554,6 @@ class AppController(
     // The PNG itself is drawn and written by the frontend; this only reports the outcome.
     fun reportPngExport(succeeded: Boolean): AppState {
         state = state.copy(status = if (succeeded) "PNG экспортирован" else "Не удалось экспортировать PNG")
-        return state
-    }
-
-    fun exportPdf(path: String): AppState {
-        val tree = commandBus?.tree?.value ?: return state
-        state = when (PdfFiles.export(tree, path)) {
-            is Outcome.Ok -> state.copy(status = "PDF экспортирован")
-            is Outcome.Err -> state.copy(status = "Не удалось экспортировать PDF")
-        }
         return state
     }
 

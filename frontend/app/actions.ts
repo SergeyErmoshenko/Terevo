@@ -17,7 +17,6 @@ export type Action =
   | { type: "openProject"; path: string }
   | { type: "createProjectFromGedcom"; name: string; gedcomPath: string }
   | { type: "exportGedcom"; path: string }
-  | { type: "exportPdf"; path: string }
   | { type: "reportPngExport"; succeeded: boolean }
   | { type: "confirmGedcomImport" }
   | { type: "cancelGedcomImport" }
@@ -43,6 +42,7 @@ export type Action =
   | { type: "selectPerson"; id: string | null }
   | { type: "selectOnCanvas"; id: string | null }
   | { type: "selectSearchResult"; id: string }
+  | { type: "showOnTree"; id: string }
   | { type: "clearHighlight" }
   | { type: "viewPerson"; id: string }
   | { type: "closePersonView" }
@@ -84,10 +84,12 @@ export type DialogAction =
   | { type: "openProjectDialog" }
   | { type: "importGedcomDialog"; name: string }
   | { type: "exportGedcomDialog" }
-  | { type: "exportPdfDialog" }
   | { type: "exportPngDialog" }
-  | { type: "chooseMediaDialog" }
-  | { type: "choosePersonFormMediaDialog" };
+  | { type: "chooseMediaDialog"; kind?: MediaPickKind }
+  | { type: "choosePersonFormMediaDialog"; kind?: MediaPickKind };
+
+// Which file filter the native picker opens with: photos or documents (PDF, Word, ...).
+export type MediaPickKind = "photo" | "document";
 
 export type DispatchableAction = Action | DialogAction;
 

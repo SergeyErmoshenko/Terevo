@@ -6,6 +6,7 @@ import me.terevo.domain.model.interval
 import me.terevo.domain.port.MediaRepository
 import me.terevo.ui.person.displayText
 import me.terevo.ui.person.mainPhotoPath
+import me.terevo.ui.person.searchText
 
 fun mapPersonRows(tree: FamilyTree, mediaRepository: MediaRepository, today: LocalDate): List<PersonRow> =
     tree.persons.values
@@ -24,6 +25,7 @@ fun mapPersonRows(tree: FamilyTree, mediaRepository: MediaRepository, today: Loc
                 occupation = person.occupation,
                 comment = person.notes,
                 alive = person.isAlive,
+                searchText = person.searchText(),
             )
         }
         .sortedBy { it.fullName }

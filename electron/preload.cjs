@@ -12,7 +12,10 @@ contextBridge.exposeInMainWorld("terevo", {
     }
   },
   choosePngPath: () => ipcRenderer.invoke("dialog:choosePngPath"),
-  writePng: (path, bytes) => ipcRenderer.invoke("fs:writePng", { path, bytes }),
+  pngBegin: (path, width, height) => ipcRenderer.invoke("png:begin", { path, width, height }),
+  pngRows: (path, bytes, rows) => ipcRenderer.invoke("png:rows", { path, bytes, rows }),
+  pngEnd: (path) => ipcRenderer.invoke("png:end", { path }),
+  pngAbort: (path) => ipcRenderer.invoke("png:abort", { path }),
   reportMenuSummary: (summary) => ipcRenderer.send("menu:summary", summary),
   onMenuAction: (handler) => {
     const listener = (_event, action) => handler(action);

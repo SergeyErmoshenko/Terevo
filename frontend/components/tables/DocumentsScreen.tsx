@@ -22,6 +22,7 @@ export function DocumentsScreen({ state, dispatch }: { state: AppStateDto; dispa
               type="button"
               className={`documents-person${state.selectedPerson?.id === row.id ? " active" : ""}`}
               onClick={() => dispatch({ type: "selectPerson", id: row.id })}
+              onDoubleClick={() => dispatch({ type: "showOnTree", id: row.id })}
             >
               {row.fullName}
             </button>
