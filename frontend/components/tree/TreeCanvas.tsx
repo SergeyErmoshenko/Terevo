@@ -96,7 +96,7 @@ const GENDER_STRIPE_WIDTH = 4;
 const SHADOW_OFFSET = 3;
 const TEXT_LEFT = 14;
 const TEXT_RIGHT_MARGIN = 10;
-const THUMBNAIL_SIZE = 40;
+const THUMBNAIL_SIZE = 68;
 const THUMBNAIL_MARGIN = 8;
 const TEXT_TOP = 8;
 const NAME_LINE_GAP = 2;
@@ -205,6 +205,7 @@ export function drawNode(
     colors: ThemeColors,
     images: Map<string, HTMLImageElement>,
     alwaysShowDetails = false,
+    onImageLoad?: () => void,
 ) {
     const topLeft = worldToScreen(camera, {x: node.x, y: node.y});
     const width = node.width * camera.scale;
@@ -270,18 +271,33 @@ export function drawNode(
         let image = images.get(url);
         if (!image) {
             image = new Image();
+            // The image decodes asynchronously: repaint once it is ready, otherwise the photo
+            // would only show up after some unrelated redraw.
+            image.onload = () => onImageLoad?.();
             image.src = url;
             images.set(url, image);
         }
         if (image.complete && image.naturalWidth > 0) {
             const size = THUMBNAIL_SIZE * camera.scale;
             const thumbX = topLeft.x + (GENDER_STRIPE_WIDTH + THUMBNAIL_MARGIN) * camera.scale;
-            const thumbY = topLeft.y + THUMBNAIL_MARGIN * camera.scale;
+            const thumbY = topLeft.y + (height - size) / 2;
+            // Center-crop to a square so non-square photos are not stretched.
+            const side = Math.min(image.naturalWidth, image.naturalHeight);
+            const sx = (image.naturalWidth - side) / 2;
+            const sy = (image.naturalHeight - side) / 2;
             ctx.save();
             ctx.beginPath();
-            ctx.rect(thumbX, thumbY, size, size);
+            ctx.arc(thumbX + size / 2, thumbY + size / 2, size / 2, 0, Math.PI * 2);
             ctx.clip();
-            ctx.drawImage(image, thumbX, thumbY, size, size);
+            ctx.drawImage(image, sx, sy, side, side, thumbX, thumbY, size, size);
+            ctx.restore();
+            ctx.save();
+            ctx.globalAlpha = contentAlpha;
+            ctx.strokeStyle = gColor;
+            ctx.lineWidth = 2 * camera.scale;
+            ctx.beginPath();
+            ctx.arc(thumbX + size / 2, thumbY + size / 2, size / 2, 0, Math.PI * 2);
+            ctx.stroke();
             ctx.restore();
             textLeft = thumbX - topLeft.x + size + THUMBNAIL_MARGIN * camera.scale;
         }
@@ -411,7 +427,7 @@ export function TreeCanvas({state, dispatch}: {
         }
         for (const node of layout.nodes) {
             const visual = layout.visuals[node.id];
-            drawNode(ctx, camera, node, visual, accentOf(highlight, node.id), roleOf(highlight, node.id), colors, imagesRef.current);
+            drawNode(ctx, camera, node, visual, accentOf(highlight, node.id), roleOf(highlight, node.id), colors, imagesRef.current, false, () => drawRef.current());
         }
 
         if (nodeDrag) {
@@ -450,6 +466,9 @@ export function TreeCanvas({state, dispatch}: {
 
         setZoomLabel(`${Math.round(camera.scale * 100)}%`);
     }, [layout, highlight, nodeDrag, nodeMap, state.layoutDirection]);
+
+    const drawRef = useRef(draw);
+    drawRef.current = draw;
 
     useEffect(() => {
         draw();

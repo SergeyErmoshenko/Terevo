@@ -1,5 +1,6 @@
 import type {Action} from "../../app/actions";
 import type {AppStateDto} from "../../app/dto";
+import {fileUrl} from "../../app/client";
 import {Icon} from "../icons/Icon";
 import {matchesQuery} from "../shell/TableSearch";
 
@@ -44,7 +45,14 @@ export function PeopleTable({state, dispatch, query}: {
                             onClick={() => dispatch({type: "viewPerson", id: person.id})}
                         >
                             <td>
-                                <strong>{person.fullName}</strong>
+                                <div className="person-cell">
+                                    <div className={`row-avatar gender-${person.gender.toLowerCase()}`}>
+                                        {person.thumbnailPath
+                                            ? <img src={fileUrl(person.thumbnailPath)} alt="" loading="lazy"/>
+                                            : (person.fullName.trim()[0] ?? "?")}
+                                    </div>
+                                    <strong>{person.fullName}</strong>
+                                </div>
                             </td>
                             <td>{person.birthDate || "—"}</td>
                             <td>{person.residence || "—"}</td>

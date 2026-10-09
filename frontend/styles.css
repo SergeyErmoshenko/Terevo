@@ -1062,6 +1062,38 @@ td.comment-cell {
   white-space: nowrap;
   color: var(--color-text-muted);
 }
+.person-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.row-avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  overflow: hidden;
+  width: 32px;
+  height: 32px;
+  border: 2px solid var(--color-neutral-gender);
+  border-radius: 50%;
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--color-neutral-gender) 22%, transparent);
+  font-size: 13px;
+  font-weight: 600;
+}
+.row-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.row-avatar.gender-male {
+  border-color: var(--color-male);
+  background: color-mix(in srgb, var(--color-male) 22%, transparent);
+}
+.row-avatar.gender-female {
+  border-color: var(--color-female);
+  background: color-mix(in srgb, var(--color-female) 22%, transparent);
+}
 tbody tr:first-child td:first-child {
   border-top-left-radius: var(--radius-md);
 }

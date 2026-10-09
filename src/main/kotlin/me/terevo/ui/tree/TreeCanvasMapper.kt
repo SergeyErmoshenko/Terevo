@@ -101,7 +101,7 @@ private fun Person.toVisual(mediaRepository: MediaRepository): PersonVisual = Pe
 )
 
 private const val TEXT_LEFT_BASE: Double = 14.0
-private const val TEXT_LEFT_WITH_THUMBNAIL: Double = 62.0
+private const val TEXT_LEFT_WITH_THUMBNAIL: Double = 90.0
 private const val TEXT_RIGHT_MARGIN: Double = 10.0
 private const val CHAR_WIDTH_ESTIMATE: Double = 13.0
 private const val YEARS_CHAR_WIDTH_ESTIMATE: Double = 10.0
