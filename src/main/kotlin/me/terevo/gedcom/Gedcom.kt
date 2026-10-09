@@ -24,69 +24,7 @@ data class GedcomPreview(
 
 object GedcomCodec {
     fun parse(text: String): Outcome<GedcomPreview> = try {
-        val lines = text.lineSequence().filter(String::isNotBlank).map(::parseLine).toList()
-        val records = records(lines)
-        val people = linkedMapOf<String, Person>()
-        val skipped = mutableSetOf<String>()
-        records.filter { it.first().tag == "INDI" }.forEach { record ->
-            val pointer = record.first().pointer ?: return@forEach
-            val nameValue = record.firstOrNull { it.level == 1 && it.tag == "NAME" }?.value.orEmpty()
-            val (given, surname) = parseName(nameValue)
-            val safeGiven = given.ifBlank { "Без имени" }
-            val sex = when (record.firstOrNull { it.level == 1 && it.tag == "SEX" }?.value) {
-                "M" -> Gender.MALE
-                "F" -> Gender.FEMALE
-                else -> Gender.UNKNOWN
-            }
-            val birth = event(record, "BIRT")
-            val death = event(record, "DEAT")
-            val notes = record.filter { it.level == 1 && it.tag == "NOTE" }.joinToString("\n") { it.value }
-            val known = setOf("INDI", "NAME", "SEX", "BIRT", "DEAT", "DATE", "PLAC", "NOTE", "FAMC", "FAMS")
-            skipped += record.map { it.tag }.filterNot(known::contains)
-            val person = Person.create(
-                name = PersonName.of(surname, safeGiven).ok(),
-                gender = sex,
-                lifeSpan = LifeSpan.of(birth.first, death.first).ok(),
-                birthPlace = birth.second?.let { me.terevo.domain.model.Place.of(it).ok() },
-                deathPlace = death.second?.let { me.terevo.domain.model.Place.of(it).ok() },
-                notes = notes,
-            ).ok()
-            people[pointer] = person
-        }
-        val commands = people.values.map(::AddPerson).toMutableList<me.terevo.domain.command.Command>()
-        val families = records.filter { it.first().tag == "FAM" }
-        families.forEach { record ->
-            val spouses = listOfNotNull(
-                record.firstOrNull { it.level == 1 && it.tag == "HUSB" }?.value?.let(people::get),
-                record.firstOrNull { it.level == 1 && it.tag == "WIFE" }?.value?.let(people::get),
-            )
-            if (spouses.size == 2) {
-                commands += AddRelation(
-                    Marriage.of(
-                        id = RelationId.next(),
-                        first = spouses[0].id,
-                        second = spouses[1].id,
-                        since = event(record, "MARR").first,
-                        status = MarriageStatus.MARRIED,
-                    ).ok(),
-                )
-            }
-            val childLines = record.withIndex().filter { (_, line) -> line.level == 1 && line.tag == "CHIL" }
-            childLines.forEach { (index, childLine) ->
-                val child = people[childLine.value] ?: return@forEach
-                val pedigree = record.drop(index + 1).takeWhile { it.level > 1 }
-                    .firstOrNull { it.level == 2 && it.tag == "PEDI" }?.value
-                val kind = parentKind(pedigree)
-                spouses.forEach { parent ->
-                    commands += AddRelation(
-                        ParentChild.of(RelationId.next(), parent.id, child.id, kind).ok(),
-                    )
-                }
-            }
-            val known = setOf("FAM", "HUSB", "WIFE", "CHIL", "MARR", "DATE", "PLAC", "NOTE", "PEDI")
-            skipped += record.map { it.tag }.filterNot(known::contains)
-        }
-        Outcome.Ok(GedcomPreview(people.size, families.size, skipped, Batch(commands)))
+        Outcome.Ok(importGedcom(text))
     } catch (failure: IllegalArgumentException) {
         Outcome.Err(DomainError.Storage.Failure(failure.message.orEmpty()))
     }
@@ -104,7 +42,13 @@ object GedcomCodec {
             appendLine("1 CHAR UTF-8")
             people.forEach { person ->
                 appendLine("0 ${pointers.getValue(person.id)} INDI")
-                appendLine("1 NAME ${person.name.givenName} /${person.name.surname}/")
+                val givenWithPatronymic = listOf(person.name.givenName, person.name.patronymic)
+                    .filter(String::isNotEmpty).joinToString(" ")
+                appendLine("1 NAME $givenWithPatronymic /${person.name.surname}/")
+                if (person.name.maidenName.isNotEmpty()) {
+                    appendLine("1 NAME /${person.name.maidenName}/")
+                    appendLine("2 TYPE maiden")
+                }
                 appendLine("1 SEX ${person.gender.gedcom}")
                 appendEvent("BIRT", person.lifeSpan.birth, person.birthPlace?.title)
                 appendEvent("DEAT", person.lifeSpan.death, person.deathPlace?.title)
@@ -146,7 +90,7 @@ object GedcomCodec {
     }
 }
 
-private fun parseLine(value: String): GedcomLine {
+internal fun parseLine(value: String): GedcomLine {
     val parts = value.trim().split(Regex("\\s+"), limit = 3)
     require(parts.size >= 2) { "Некорректная строка GEDCOM: $value" }
     val level = parts[0].toInt()
@@ -160,7 +104,7 @@ private fun parseLine(value: String): GedcomLine {
     }
 }
 
-private fun records(lines: List<GedcomLine>): List<List<GedcomLine>> {
+internal fun records(lines: List<GedcomLine>): List<List<GedcomLine>> {
     val result = mutableListOf<MutableList<GedcomLine>>()
     lines.forEach { line ->
         if (line.level == 0) result += mutableListOf(line) else result.lastOrNull()?.add(line)
@@ -168,7 +112,7 @@ private fun records(lines: List<GedcomLine>): List<List<GedcomLine>> {
     return result
 }
 
-private fun parentKind(pedigree: String?): ParentKind = when (pedigree?.trim()?.uppercase()) {
+internal fun parentKind(pedigree: String?): ParentKind = when (pedigree?.trim()?.uppercase()) {
     null, "BIRTH" -> ParentKind.BIOLOGICAL
     "ADOPTED" -> ParentKind.ADOPTIVE
     "FOSTER" -> ParentKind.FOSTER
@@ -176,45 +120,63 @@ private fun parentKind(pedigree: String?): ParentKind = when (pedigree?.trim()?.
     else -> ParentKind.ADOPTIVE
 }
 
-private fun parseName(value: String): Pair<String, String> {
+internal fun parseName(value: String): Pair<String, String> {
     val slash = value.indexOf('/')
     if (slash < 0) return value.trim() to ""
     val end = value.indexOf('/', slash + 1).takeIf { it >= 0 } ?: value.length
     return value.substring(0, slash).trim() to value.substring(slash + 1, end).trim()
 }
 
-private fun event(record: List<GedcomLine>, tag: String): Pair<EventDate, String?> {
-    val start = record.indexOfFirst { it.level == 1 && it.tag == tag }
-    if (start < 0) return EventDate.Unknown to null
-    val children = record.drop(start + 1).takeWhile { it.level > 1 }
-    val date = children.firstOrNull { it.level == 2 && it.tag == "DATE" }?.value?.let(::parseDate) ?: EventDate.Unknown
-    val place = children.firstOrNull { it.level == 2 && it.tag == "PLAC" }?.value
-    return date to place
-}
-
 private val APPROXIMATE_DATE_PREFIXES = listOf("ABT ", "CAL ", "EST ", "BEF ", "AFT ")
 
-private fun parseDate(value: String): EventDate = try {
-    val normalized = value.trim().uppercase()
-    if (normalized.startsWith("BET ") && " AND " in normalized) {
-        val (from, to) = normalized.removePrefix("BET ").split(" AND ", limit = 2).map(::parseSimpleDate)
-        EventDate.Range.of(from.first, to.first).ok()
-    } else {
-        val prefix = APPROXIMATE_DATE_PREFIXES.firstOrNull { normalized.startsWith(it) }
-        val (date, precision) = parseSimpleDate(normalized.removePrefix(prefix.orEmpty()))
-        if (prefix != null || precision != DatePrecision.DAY) EventDate.Approximate(date, precision)
-        else EventDate.Exact(date)
+private val CALENDAR_ESCAPE = Regex("@#[^@]*@")
+
+private val DOTTED_DATE = Regex("""^(\d{1,2})\.(\d{1,2})\.(\d{4})$""")
+
+private val DOTTED_MONTH = Regex("""^(\d{1,2})\.(\d{4})$""")
+
+internal fun parseDate(value: String): EventDate? = try {
+    val normalized = value.uppercase().replace(CALENDAR_ESCAPE, "").substringBefore('(').trim()
+        .removePrefix("INT ").trim()
+    when {
+        normalized.isEmpty() -> null
+        normalized.startsWith("BET ") && " AND " in normalized -> {
+            val (from, to) = normalized.removePrefix("BET ").split(" AND ", limit = 2).map(::parseSimpleDate)
+            EventDate.Range.of(from.first, to.first).ok()
+        }
+
+        normalized.startsWith("FROM ") && " TO " in normalized -> {
+            val (from, to) = normalized.removePrefix("FROM ").split(" TO ", limit = 2).map(::parseSimpleDate)
+            EventDate.Range.of(from.first, to.first).ok()
+        }
+
+        else -> {
+            val prefix = (APPROXIMATE_DATE_PREFIXES + listOf("FROM ", "TO ")).firstOrNull { normalized.startsWith(it) }
+            val (date, precision) = parseSimpleDate(normalized.removePrefix(prefix.orEmpty()))
+            if (prefix != null || precision != DatePrecision.DAY) EventDate.Approximate(date, precision)
+            else EventDate.Exact(date)
+        }
     }
 } catch (malformed: Exception) {
-    EventDate.Unknown
+    null
 }
 
-private fun parseSimpleDate(value: String): Pair<LocalDate, DatePrecision> {
-    val parts = value.split(' ')
+internal fun parseSimpleDate(value: String): Pair<LocalDate, DatePrecision> {
+    val text = value.trim()
+    DOTTED_DATE.matchEntire(text)?.let { match ->
+        val (day, month, year) = match.destructured
+        return LocalDate(year.toInt(), month.toInt(), day.toInt()) to DatePrecision.DAY
+    }
+    DOTTED_MONTH.matchEntire(text)?.let { match ->
+        val (month, year) = match.destructured
+        return LocalDate(year.toInt(), month.toInt(), 1) to DatePrecision.MONTH
+    }
+    val parts = text.split(Regex("\\s+"))
+    fun year(token: String) = token.substringBefore('/').toInt()
     val date = when (parts.size) {
-        3 -> LocalDate(parts[2].toInt(), MONTHS.getValue(parts[1]), parts[0].toInt())
-        2 -> LocalDate(parts[1].toInt(), MONTHS.getValue(parts[0]), 1)
-        1 -> LocalDate(parts[0].toInt(), 1, 1)
+        3 -> LocalDate(year(parts[2]), MONTHS.getValue(parts[1]), parts[0].toInt())
+        2 -> LocalDate(year(parts[1]), MONTHS.getValue(parts[0]), 1)
+        1 -> LocalDate(year(parts[0]), 1, 1)
         else -> throw IllegalArgumentException("Неподдерживаемая дата GEDCOM: $value")
     }
     val precision = when (parts.size) {
@@ -249,12 +211,12 @@ private val Gender.gedcom: String
         Gender.UNKNOWN -> "U"
     }
 
-private fun <T> Outcome<T>.ok(): T = when (this) {
+internal fun <T> Outcome<T>.ok(): T = when (this) {
     is Outcome.Ok -> value
     is Outcome.Err -> throw IllegalArgumentException(error.toString())
 }
 
-private val MONTHS = mapOf(
+internal val MONTHS = mapOf(
     "JAN" to 1, "FEB" to 2, "MAR" to 3, "APR" to 4, "MAY" to 5, "JUN" to 6,
     "JUL" to 7, "AUG" to 8, "SEP" to 9, "OCT" to 10, "NOV" to 11, "DEC" to 12,
 )

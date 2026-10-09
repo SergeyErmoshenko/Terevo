@@ -65,7 +65,7 @@ export function Inspector({ state, dispatch }: { state: AppStateDto; dispatch: (
             {person.deathPlace && <Detail label="Место смерти" value={person.deathPlace} />}
             {person.residence && <Detail label="Место жительства" value={person.residence} />}
             {person.occupation && <Detail label="Основное занятие" value={person.occupation} />}
-            {person.notes && <Detail label="Заметки" value={person.notes} />}
+            {person.notes && <Detail label="Комментарий" value={person.notes} />}
             {person.customFields.map((field) => (
               <Detail key={field.key} label={field.key} value={field.value} />
             ))}

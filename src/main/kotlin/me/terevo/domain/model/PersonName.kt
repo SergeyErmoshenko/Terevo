@@ -10,7 +10,7 @@ class PersonName private constructor(
     val maidenName: String,
 ) {
     val display: String
-        get() = listOf(surname, givenName, patronymic)
+        get() = listOf(surname, maidenName.takeIf { it.isNotEmpty() }?.let { "($it)" }.orEmpty(), givenName, patronymic)
             .filter { it.isNotEmpty() }
             .joinToString(" ")
 

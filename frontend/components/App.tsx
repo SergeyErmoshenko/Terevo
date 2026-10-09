@@ -17,6 +17,7 @@ import {PeopleTable} from "./tables/PeopleTable";
 import {EventsTable} from "./tables/EventsTable";
 import {DocumentsScreen} from "./tables/DocumentsScreen";
 import {PersonFormDialog} from "./dialogs/PersonFormDialog";
+import {PersonViewDialog} from "./dialogs/PersonViewDialog";
 import {RelationDialog} from "./dialogs/RelationDialog";
 import {EventFormDialog} from "./dialogs/EventFormDialog";
 import {GedcomPreviewDialog} from "./dialogs/GedcomPreviewDialog";
@@ -211,6 +212,8 @@ function App() {
 
             {state.personForm &&
                 <PersonFormDialog form={state.personForm} media={state.selectedMedia} busy={busy} dispatch={dispatch}/>}
+            {state.personViewOpen && state.selectedPerson && !state.personForm &&
+                <PersonViewDialog state={state} person={state.selectedPerson} dispatch={act}/>}
             {state.relationDialog && <RelationDialog dialog={state.relationDialog} busy={busy} dispatch={dispatch}/>}
             {state.eventForm && <EventFormDialog form={state.eventForm} busy={busy} dispatch={dispatch}/>}
             {state.gedcomPreview && <GedcomPreviewDialog preview={state.gedcomPreview} busy={busy} dispatch={act}/>}

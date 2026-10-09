@@ -1055,6 +1055,13 @@ td {
   font-variant-numeric: tabular-nums;
   transition: background-color var(--duration-fast) var(--ease);
 }
+td.comment-cell {
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-muted);
+}
 tbody tr:first-child td:first-child {
   border-top-left-radius: var(--radius-md);
 }

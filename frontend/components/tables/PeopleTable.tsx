@@ -8,7 +8,7 @@ export function PeopleTable({state, dispatch, query}: {
     dispatch: (action: Action) => void;
     query: string
 }) {
-    const rows = state.personRows.filter((person) => matchesQuery(query, person.searchText, person.residence, person.occupation, person.birthDate));
+    const rows = state.personRows.filter((person) => matchesQuery(query, person.searchText, person.residence, person.occupation, person.birthDate, person.comment));
     return (
         <section className="data-view">
             <header className="data-heading">
@@ -33,15 +33,15 @@ export function PeopleTable({state, dispatch, query}: {
                         <th>Место жительства</th>
                         <th>Род занятий</th>
                         <th>Статус</th>
+                        <th>Комментарий</th>
                     </tr>
                     </thead>
                     <tbody>
                     {rows.map((person) => (
                         <tr
                             key={person.id}
-                            title="Двойной щелчок — показать на дереве"
-                            onClick={() => dispatch({type: "selectPerson", id: person.id})}
-                            onDoubleClick={() => dispatch({type: "showOnTree", id: person.id})}
+                            title="Нажмите, чтобы посмотреть все сведения"
+                            onClick={() => dispatch({type: "viewPerson", id: person.id})}
                         >
                             <td>
                                 <strong>{person.fullName}</strong>
@@ -50,6 +50,7 @@ export function PeopleTable({state, dispatch, query}: {
                             <td>{person.residence || "—"}</td>
                             <td>{person.occupation || "—"}</td>
                             <td>{person.alive ? "Жив" : "Умер"}</td>
+                            <td className="comment-cell" title={person.comment || undefined}>{person.comment || "—"}</td>
                         </tr>
                     ))}
                     </tbody>

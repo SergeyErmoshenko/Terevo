@@ -33,6 +33,12 @@ class PersonNameTest {
     }
 
     @Test
+    fun `display shows maiden name in parentheses`() {
+        assertEquals("Иванова (Петрова) Мария", PersonName.of("Иванова", "Мария", maidenName = "Петрова").shouldBeOk().display)
+        assertEquals("(Вашкинская) Галина Александровна", PersonName.of("", "Галина", "Александровна", "Вашкинская").shouldBeOk().display)
+    }
+
+    @Test
     fun `display skips empty parts`() {
         val name = PersonName.of(surname = "Иванов", givenName = "Иван").shouldBeOk()
 

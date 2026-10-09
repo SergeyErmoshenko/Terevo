@@ -192,7 +192,7 @@ export function PersonFormDialog({
           </>
         )}
         <TextField label="Основное занятие" value={fields.occupation} wide onChange={(occupation) => change({ occupation })} />
-        <TextField label="Заметки" value={fields.notes} wide multiline onChange={(notes) => change({ notes })} />
+        <TextField label="Комментарий" value={fields.notes} wide multiline onChange={(notes) => change({ notes })} />
 
         <h3 className="form-section-title">Дополнительные поля</h3>
         <div className="field field-wide">

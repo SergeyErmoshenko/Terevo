@@ -84,7 +84,7 @@ object Strings {
     const val RANGE_END: String = "Конец"
     const val LIFE_DATES_UNKNOWN: String = "Даты жизни не указаны"
     const val DEATH_PLACE: String = "Место смерти"
-    const val NOTES: String = "Заметки"
+    const val NOTES: String = "Комментарий"
     const val CUSTOM_FIELDS: String = "Дополнительные поля"
     const val CUSTOM_FIELD_KEY: String = "Название поля"
     const val CUSTOM_FIELD_VALUE: String = "Значение"

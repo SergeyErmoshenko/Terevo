@@ -165,7 +165,11 @@ class AppController(
     // Switches to the tree tab and centers the camera on the person, whatever tab the request came from.
     fun showOnTree(id: PersonId): AppState {
         selectPerson(id)
-        state = state.copy(mainTab = MainTab.TREE, canvas = state.canvas.centeredOnSelected())
+        state = state.copy(
+            mainTab = MainTab.TREE,
+            canvas = state.canvas.centeredOnSelected(),
+            personViewOpen = false,
+        )
         return state
     }
 
